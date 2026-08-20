@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block title %}Home - XAI Dyslexia Screening{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="container">
+        <div class="hero-content">
+            <span class="hero-badge">Research Project</span>
+            <h1>Explainable AI for Early Dyslexia Screening</h1>
+            <p class="hero-subtitle">Using reading and writing behavioral patterns with interpretable machine learning to support early identification of dyslexia and dysgraphia in children.</p>
+            <div class="hero-actions">
+                <a href="{{ url_for('dysgraphia.upload_form') }}" class="btn btn-primary btn-lg">
+                    Dysgraphia Screening
+                </a>
+                <a href="{{ url_for('dyslexia.test_form') }}" class="btn btn-secondary btn-lg">
+                    Dyslexia Screening
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="section-header">
+            <h2>Screening Tools</h2>
+            <p>Two complementary screening approaches powered by machine learning</p>
+        </div>
+        <div class="card-grid">
+            <div class="card">
+                <div class="card-icon card-icon-blue">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                        <path d="m15 5 4 4"/>
+                    </svg>
+                </div>
+                <h3>Dysgraphia Screening</h3>
+                <p>Upload a handwriting sample image for AI-powered analysis. Our model examines letter formation, spacing, alignment, and stroke patterns to detect indicators of dysgraphia.</p>
+                <ul class="card-features">
+                    <li>Image upload with preview</li>
+                    <li>SHAP-based explanations</li>
+                    <li>Feature importance visualization</li>
+                </ul>
+                <a href="{{ url_for('dysgraphia.upload_form') }}" class="btn btn-primary">
+                    Start Screening &rarr;
+                </a>
+            </div>
+
+            <div class="card">
+                <div class="card-icon card-icon-teal">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+                        <path d="M8 7h6"/>
+                        <path d="M8 11h8"/>
+                    </svg>
+                </div>
+                <h3>Dyslexia Screening</h3>
+                <p>Enter reading test metrics including reading speed, error counts, letter reversals, and comprehension scores. The model evaluates multiple behavioral indicators.</p>
+                <ul class="card-features">
+                    <li>Multi-factor assessment</li>
+                    <li>Risk level classification</li>
+                    <li>Individualized explanations</li>
+                </ul>
+                <a href="{{ url_for('dyslexia.test_form') }}" class="btn btn-primary">
+                    Start Screening &rarr;
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section section-alt">
+    <div class="container">
+        <div class="section-header">
+            <h2>Why Explainable AI?</h2>
+            <p>Making machine learning predictions transparent and interpretable</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-item">
+                <div class="feature-number">01</div>
+                <h4>Transparent Predictions</h4>
+                <p>Every prediction comes with a clear explanation of which factors contributed most, building trust with educators and parents.</p>
+            </div>
+            <div class="feature-item">
+                <div class="feature-number">02</div>
+                <h4>SHAP Explanations</h4>
+                <p>SHAP (SHapley Additive exPlanations) values show how each feature pushes the prediction toward or away from a dyslexia diagnosis.</p>
+            </div>
+            <div class="feature-item">
+                <div class="feature-number">03</div>
+                <h4>Actionable Insights</h4>
+                <p>Identify specific behavioral areas that need attention, enabling targeted intervention strategies for each child.</p>
+            </div>
+            <div class="feature-item">
+                <div class="feature-number">04</div>
+                <h4>Evidence-Based</h4>
+                <p>Trained on established datasets from recognized dyslexia research, ensuring reliable and scientifically grounded predictions.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="cta-box">
+            <h2>Ready to Begin?</h2>
+            <p>Choose a screening tool above to get started. All predictions include visual explanations to help understand the results.</p>
+            <div class="cta-actions">
+                <a href="{{ url_for('dysgraphia.upload_form') }}" class="btn btn-primary">Dysgraphia Tool</a>
+                <a href="{{ url_for('dyslexia.test_form') }}" class="btn btn-secondary">Dyslexia Tool</a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

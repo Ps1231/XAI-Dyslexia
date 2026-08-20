@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+
+{% block title %}About - XAI Dyslexia Screening{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div class="container">
+        <h1>About This Project</h1>
+        <p>Understanding the methodology, datasets, and technology behind our screening tools</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="content-block">
+            <h2>Project Overview</h2>
+            <p>This project implements an <strong>Explainable AI (XAI) framework</strong> for the early screening of dyslexia and dysgraphia in children. By analyzing reading and writing behavioral patterns through machine learning models, we aim to provide transparent, interpretable, and evidence-based screening tools that can assist educators, clinicians, and parents in early identification.</p>
+            <p>Early detection of learning disabilities is critical. Research shows that children who receive intervention before the age of 8 have significantly better outcomes. Our system leverages multiple machine learning techniques combined with explainability methods to make the screening process both accurate and understandable.</p>
+        </div>
+
+        <div class="content-block">
+            <h2>Project Objectives</h2>
+            <div class="objectives-grid">
+                <div class="objective-item">
+                    <h4>Early Detection</h4>
+                    <p>Develop screening tools that can identify potential indicators of dyslexia and dysgraphia in children at an early age, enabling timely intervention.</p>
+                </div>
+                <div class="objective-item">
+                    <h4>Explainable Predictions</h4>
+                    <p>Implement SHAP and LIME-based explanations that make every model prediction transparent and interpretable for non-technical stakeholders.</p>
+                </div>
+                <div class="objective-item">
+                    <h4>Multi-Modal Analysis</h4>
+                    <p>Analyze both handwriting images (dysgraphia) and reading behavioral data (dyslexia) to provide comprehensive screening capabilities.</p>
+                </div>
+                <div class="objective-item">
+                    <h4>Accessible Tools</h4>
+                    <p>Create user-friendly web-based tools that can be deployed in schools, clinics, and at-home settings for widespread accessibility.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-block">
+            <h2>ML Pipeline</h2>
+            <div class="pipeline">
+                <div class="pipeline-step">
+                    <div class="pipeline-number">1</div>
+                    <h4>Data Collection</h4>
+                    <p>Curated datasets of handwriting samples and reading test data from established dyslexia research databases.</p>
+                </div>
+                <div class="pipeline-arrow">&rarr;</div>
+                <div class="pipeline-step">
+                    <div class="pipeline-number">2</div>
+                    <h4>Preprocessing</h4>
+                    <p>Image augmentation, noise removal, feature extraction, normalization, and handling class imbalances.</p>
+                </div>
+                <div class="pipeline-arrow">&rarr;</div>
+                <div class="pipeline-step">
+                    <div class="pipeline-number">3</div>
+                    <h4>Feature Engineering</h4>
+                    <p>Extract handwriting features (spacing, alignment, strokes) and reading metrics (speed, errors, reversals).</p>
+                </div>
+                <div class="pipeline-arrow">&rarr;</div>
+                <div class="pipeline-step">
+                    <div class="pipeline-number">4</div>
+                    <h4>Classification</h4>
+                    <p>Apply CNN for image-based dysgraphia detection and ensemble classifiers for dyslexia risk assessment.</p>
+                </div>
+                <div class="pipeline-arrow">&rarr;</div>
+                <div class="pipeline-step">
+                    <div class="pipeline-number">5</div>
+                    <h4>Explanation</h4>
+                    <p>Generate SHAP values, LIME explanations, and feature importance rankings for each prediction.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-block">
+            <h2>Explainability Methods</h2>
+            <div class="methods-grid">
+                <div class="method-card">
+                    <h4>SHAP (SHapley Additive exPlanations)</h4>
+                    <p>A game-theoretic approach to explain the output of any machine learning model. SHAP values show the contribution of each feature to the prediction, computed as the average marginal contribution of a feature value across all possible coalitions.</p>
+                    <div class="method-usage">
+                        <strong>Used for:</strong> Both dysgraphia and dyslexia predictions
+                    </div>
+                </div>
+                <div class="method-card">
+                    <h4>LIME (Local Interpretable Model-agnostic Explanations)</h4>
+                    <p>Explains individual predictions by perturbing the input and observing how the prediction changes. Creates a local linear model around the instance to approximate the decision boundary.</p>
+                    <div class="method-usage">
+                        <strong>Used for:</strong> Dysgraphia image analysis explanations
+                    </div>
+                </div>
+                <div class="method-card">
+                    <h4>Feature Importance</h4>
+                    <p>Ranking of input features by their overall contribution to the model's predictions, providing a global view of which behavioral patterns are most predictive.</p>
+                    <div class="method-usage">
+                        <strong>Used for:</strong> Model interpretation and feature selection
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-block">
+            <h2>Datasets</h2>
+            <div class="datasets-list">
+                <div class="dataset-item">
+                    <h4>1. CMU HCI Dysgraphia Dataset</h4>
+                    <p>Handwriting samples collected for dysgraphia research, containing images from children with and without dysgraphia diagnoses. Used for training the CNN-based image classifier.</p>
+                    <span class="dataset-tag">Image Data</span>
+                </div>
+                <div class="dataset-item">
+                    <h4>2. UCI Machine Learning Repository - Dyslexia Dataset</h4>
+                    <p>Feature-engineered dataset containing reading test results, cognitive scores, and behavioral metrics from children screened for dyslexia.</p>
+                    <a href="https://archive.ics.uci.edu/" target="_blank" class="dataset-link">UCI Repository</a>
+                    <span class="dataset-tag">Tabular Data</span>
+                </div>
+                <div class="dataset-item">
+                    <h4>3. Read &amp; Spell Test (RST) Dataset</h4>
+                    <p>Standardized reading and spelling assessment data used to evaluate phonological processing and decoding abilities in children.</p>
+                    <span class="dataset-tag">Behavioral Data</span>
+                </div>
+                <div class="dataset-item">
+                    <h4>4. DYSLEXGIS - Dyslexia and Geography Dataset</h4>
+                    <p>Multi-modal dataset combining handwriting samples with cognitive test results for comprehensive dyslexia research.</p>
+                    <span class="dataset-tag">Multi-Modal Data</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-block">
+            <h2>Technologies</h2>
+            <div class="tech-grid">
+                <div class="tech-item">
+                    <strong>Backend:</strong> Python, Flask
+                </div>
+                <div class="tech-item">
+                    <strong>ML/DL:</strong> TensorFlow, Keras, Scikit-learn, XGBoost
+                </div>
+                <div class="tech-item">
+                    <strong>Explainability:</strong> SHAP, LIME
+                </div>
+                <div class="tech-item">
+                    <strong>Image Processing:</strong> OpenCV, Pillow, NumPy
+                </div>
+                <div class="tech-item">
+                    <strong>Frontend:</strong> HTML5, CSS3, JavaScript, Chart.js
+                </div>
+                <div class="tech-item">
+                    <strong>Deployment:</strong> Flask development server
+                </div>
+            </div>
+        </div>
+
+        <div class="content-block">
+            <h2>Disclaimer</h2>
+            <p class="disclaimer">This tool is designed for <strong>screening and educational purposes only</strong>. It is not a diagnostic instrument and should not be used as a substitute for professional clinical assessment. Always consult qualified healthcare professionals or educational psychologists for formal diagnosis of learning disabilities.</p>
+        </div>
+    </div>
+</section>
+{% endblock %}

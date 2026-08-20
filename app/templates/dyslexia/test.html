@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+
+{% block title %}Dyslexia Screening - Reading Assessment{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div class="container">
+        <h1>Dyslexia Screening</h1>
+        <p>Complete the reading assessment form to screen for dyslexia indicators</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="form-layout">
+            <form id="dyslexiaForm" action="{{ url_for('dyslexia.screen') }}" method="POST" class="screening-form">
+                <div class="form-card">
+                    <div class="form-card-header">
+                        <h3>Child Information</h3>
+                        <p>Basic demographic details</p>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="child_name">Child's Name</label>
+                            <input type="text" id="child_name" name="child_name" placeholder="Enter child's name" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="age">Age <span class="required">*</span></label>
+                            <input type="number" id="age" name="age" min="4" max="18" placeholder="e.g. 8" class="form-control" required>
+                            <span class="form-hint">Age in years (4-18)</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="grade">Grade Level</label>
+                            <select id="grade" name="grade" class="form-control">
+                                <option value="">Select grade</option>
+                                <option value="K">Kindergarten</option>
+                                <option value="1">1st Grade</option>
+                                <option value="2">2nd Grade</option>
+                                <option value="3">3rd Grade</option>
+                                <option value="4">4th Grade</option>
+                                <option value="5">5th Grade</option>
+                                <option value="6">6th Grade</option>
+                                <option value="7">7th Grade</option>
+                                <option value="8">8th Grade</option>
+                                <option value="9">9th Grade</option>
+                                <option value="10">10th Grade</option>
+                                <option value="11">11th Grade</option>
+                                <option value="12">12th Grade</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-card">
+                    <div class="form-card-header">
+                        <h3>Reading Test Results</h3>
+                        <p>Enter the results from a standardized or informal reading assessment</p>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="wpm">Words Read Per Minute <span class="required">*</span></label>
+                            <input type="number" id="wpm" name="wpm" min="0" max="300" placeholder="e.g. 85" class="form-control" required>
+                            <span class="form-hint">Number of words correctly read in one minute</span>
+                            <div class="benchmark-bar">
+                                <div class="benchmark-range benchmark-low">Below 50</div>
+                                <div class="benchmark-range benchmark-mid">50-100</div>
+                                <div class="benchmark-range benchmark-high">100+</div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="errors">Number of Reading Errors <span class="required">*</span></label>
+                            <input type="number" id="errors" name="errors" min="0" max="100" placeholder="e.g. 7" class="form-control" required>
+                            <span class="form-hint">Total errors made during oral reading (substitutions, omissions, additions)</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="reversals">Letter Reversals Count <span class="required">*</span></label>
+                            <input type="number" id="reversals" name="reversals" min="0" max="50" placeholder="e.g. 4" class="form-control" required>
+                            <span class="form-hint">Number of letter/number reversals observed (e.g., b/d, p/q, 6/9)</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="comprehension">Comprehension Score (%) <span class="required">*</span></label>
+                            <input type="number" id="comprehension" name="comprehension" min="0" max="100" placeholder="e.g. 65" class="form-control" required>
+                            <span class="form-hint">Percentage score on reading comprehension questions</span>
+                            <div class="benchmark-bar">
+                                <div class="benchmark-range benchmark-low">Below 40%</div>
+                                <div class="benchmark-range benchmark-mid">40-70%</div>
+                                <div class="benchmark-range benchmark-high">70%+</div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="spelling_errors">Spelling Errors Count <span class="required">*</span></label>
+                            <input type="number" id="spelling_errors" name="spelling_errors" min="0" max="50" placeholder="e.g. 6" class="form-control" required>
+                            <span class="form-hint">Number of spelling errors in a dictated sentence or paragraph</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-card form-card-info">
+                    <div class="info-box">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="16" x2="12" y2="12"/>
+                            <line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                        <div>
+                            <h4>About This Assessment</h4>
+                            <p>This screening tool analyzes reading behavioral patterns to identify potential indicators of dyslexia. It evaluates multiple factors including reading speed, accuracy, letter reversal frequency, comprehension ability, and spelling proficiency. Results are provided with SHAP-based explanations for transparency.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary btn-lg" id="screenBtn">
+                        Run Screening
+                    </button>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-secondary btn-lg">Cancel</a>
+                </div>
+            </form>
+
+            <div class="form-sidebar">
+                <div class="sidebar-card">
+                    <h4>What Happens Next</h4>
+                    <ol class="how-it-works">
+                        <li><strong>Analyze</strong> &mdash; ML model evaluates all behavioral indicators</li>
+                        <li><strong>Classify</strong> &mdash; Risk level determination (Low/Medium/High)</li>
+                        <li><strong>Explain</strong> &mdash; SHAP waterfall shows feature contributions</li>
+                        <li><strong>Guide</strong> &mdash; Key indicators highlight areas of concern</li>
+                    </ol>
+                </div>
+
+                <div class="sidebar-card">
+                    <h4>Risk Levels</h4>
+                    <div class="risk-legend">
+                        <div class="risk-item">
+                            <span class="risk-badge risk-low">Low</span>
+                            <span>No significant indicators detected</span>
+                        </div>
+                        <div class="risk-item">
+                            <span class="risk-badge risk-medium">Medium</span>
+                            <span>Moderate indicators &mdash; monitor closely</span>
+                        </div>
+                        <div class="risk-item">
+                            <span class="risk-badge risk-high">High</span>
+                            <span>Strong indicators &mdash; recommend evaluation</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

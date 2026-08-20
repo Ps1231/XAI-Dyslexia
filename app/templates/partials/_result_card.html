@@ -1,0 +1,11 @@
+<div class="result-card {% if class %}{{ class }}{% endif %}">
+    {% if title %}
+    <h4 class="result-card-title">{{ title }}</h4>
+    {% endif %}
+    <div class="result-card-body">
+        {{ caller() if caller else '' }}
+    </div>
+    {% if footer %}
+    <div class="result-card-footer">{{ footer }}</div>
+    {% endif %}
+</div>

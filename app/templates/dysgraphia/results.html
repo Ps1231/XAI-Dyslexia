@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+
+{% block title %}Dysgraphia Results - Analysis Complete{% endblock %}
+
+{% block content %}
+<section class="page-header page-header-results">
+    <div class="container">
+        <h1>Dysgraphia Analysis Results</h1>
+        <p>AI-powered analysis of the uploaded handwriting sample</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="results-layout">
+            <div class="results-main">
+                <div class="result-banner {% if results.is_positive %}result-positive{% else %}result-negative{% endif %}">
+                    <div class="result-icon">
+                        {% if results.is_positive %}
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        {% else %}
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        {% endif %}
+                    </div>
+                    <div class="result-text">
+                        <h2>Prediction: {{ results.prediction }}</h2>
+                        <p class="result-confidence">Confidence: <strong>{{ results.confidence }}%</strong></p>
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h3>Uploaded Handwriting Sample</h3>
+                    <div class="uploaded-image-container">
+                        <img src="{{ url_for('static', filename='uploads/' + image_path) }}" alt="Uploaded handwriting sample" class="uploaded-image">
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h3>Feature Importance</h3>
+                    <p class="section-description">The relative contribution of each handwriting feature to the prediction.</p>
+                    <div class="chart-container">
+                        <canvas id="featureImportanceChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h3>SHAP Explanation</h3>
+                    <p class="section-description">How each feature pushes the prediction toward or away from dysgraphia. Blue indicates lower risk, red indicates higher risk.</p>
+                    <div class="chart-container">
+                        <canvas id="shapChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="result-actions">
+                    <a href="{{ url_for('dysgraphia.upload_form') }}" class="btn btn-primary">Try Another</a>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-secondary">Back to Home</a>
+                </div>
+            </div>
+
+            <div class="results-sidebar">
+                <div class="sidebar-card">
+                    <h4>Feature Contributions</h4>
+                    <div class="feature-contributions">
+                        {% for feature, value in results.features.items() %}
+                        <div class="feature-bar-item">
+                            <div class="feature-bar-label">{{ feature }}</div>
+                            <div class="feature-bar-track">
+                                <div class="feature-bar-fill {% if value > 0.2 %}bar-high{% elif value > 0.15 %}bar-medium{% else %}bar-low{% endif %}" style="width: {{ (value * 100)|int }}%"></div>
+                            </div>
+                            <div class="feature-bar-value">{{ (value * 100)|round(1) }}%</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="sidebar-card">
+                    <h4>Interpretation</h4>
+                    <p>{{ 'The analysis indicates patterns consistent with dysgraphia. The SHAP breakdown above shows which features contributed most to this assessment.' if results.is_positive else 'The handwriting patterns are within the normal range. However, this screening is not a diagnosis. Consult a professional if you have concerns.' }}</p>
+                </div>
+
+                <div class="sidebar-card sidebar-disclaimer">
+                    <h4>Important Note</h4>
+                    <p>This is a screening tool, not a diagnostic instrument. Results should be interpreted by qualified professionals.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const features = {{ results.features.keys()|list|tojson }};
+        const importances = {{ results.features.values()|list|tojson }};
+        const shapData = {{ results.shap_values|tojson }};
+
+        renderFeatureImportanceChart('featureImportanceChart', features, importances);
+        renderShapChart('shapChart', Object.keys(shapData), Object.values(shapData));
+    });
+</script>
+{% endblock %}

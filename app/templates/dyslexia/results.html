@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+
+{% block title %}Dyslexia Screening Results{% endblock %}
+
+{% block content %}
+<section class="page-header page-header-results">
+    <div class="container">
+        <h1>Dyslexia Screening Results</h1>
+        <p>Comprehensive analysis with explainable AI insights</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="results-layout">
+            <div class="results-main">
+                <div class="result-banner result-banner-{{ results.risk_level|lower }}">
+                    <div class="result-icon">
+                        {% if results.risk_level == 'High' %}
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        {% elif results.risk_level == 'Medium' %}
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        {% else %}
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        {% endif %}
+                    </div>
+                    <div class="result-text">
+                        <h2>Risk Level: <span class="risk-text-{{ results.risk_level|lower }}">{{ results.risk_level }}</span></h2>
+                        <p class="result-confidence">Confidence: <strong>{{ results.confidence }}%</strong></p>
+                        {% if results.child_name and results.child_name != 'Not provided' %}
+                        <p class="result-child">Assessed: <strong>{{ results.child_name }}</strong> (Age: {{ results.child_age }}, Grade: {{ results.grade_level }})</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h3>Feature Contribution Analysis</h3>
+                    <p class="section-description">How each behavioral indicator contributed to the risk assessment. Values above zero push toward higher risk, values below zero push toward lower risk.</p>
+                    <div class="chart-container">
+                        <canvas id="featureChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h3>SHAP Waterfall Explanation</h3>
+                    <p class="section-description">SHAP values showing the marginal contribution of each feature to the final prediction. Red bars increase risk, blue bars decrease risk.</p>
+                    <div class="chart-container">
+                        <canvas id="shapWaterfall"></canvas>
+                    </div>
+                </div>
+
+                <div class="result-section">
+                    <h3>Confidence Score</h3>
+                    <div class="gauge-container">
+                        <div class="chart-container chart-container-small">
+                            <canvas id="confidenceGauge"></canvas>
+                        </div>
+                        <div class="gauge-label">
+                            <span class="gauge-value">{{ results.confidence }}%</span>
+                            <span class="gauge-text">Model Confidence</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-actions">
+                    <a href="{{ url_for('dyslexia.test_form') }}" class="btn btn-primary">Screen Another Child</a>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-secondary">Back to Home</a>
+                </div>
+            </div>
+
+            <div class="results-sidebar">
+                <div class="sidebar-card">
+                    <h4>Key Behavioral Indicators</h4>
+                    <div class="indicators-list">
+                        {% for indicator in results.key_indicators %}
+                        <div class="indicator-item indicator-{{ indicator.severity }}">
+                            <div class="indicator-header">
+                                <span class="indicator-feature">{{ indicator.feature }}</span>
+                                <span class="indicator-badge indicator-badge-{{ indicator.severity }}">{{ indicator.severity|upper }}</span>
+                            </div>
+                            <div class="indicator-value">{{ indicator.value }}</div>
+                            <p class="indicator-description">{{ indicator.description }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="sidebar-card">
+                    <h4>Recommendations</h4>
+                    {% if results.risk_level == 'High' %}
+                    <div class="recommendation recommendation-high">
+                        <p><strong>Strong indicators detected.</strong> We recommend scheduling a comprehensive evaluation with a certified educational psychologist or reading specialist. Early intervention can significantly improve outcomes.</p>
+                    </div>
+                    {% elif results.risk_level == 'Medium' %}
+                    <div class="recommendation recommendation-medium">
+                        <p><strong>Moderate indicators observed.</strong> Consider monitoring reading progress closely. A follow-up screening in 2-3 months is advisable. If concerns persist, consult a reading specialist.</p>
+                    </div>
+                    {% else %}
+                    <div class="recommendation recommendation-low">
+                        <p><strong>Low risk indicators.</strong> The behavioral patterns are within expected ranges. Continue to support reading development through regular practice and age-appropriate reading materials.</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="sidebar-card sidebar-disclaimer">
+                    <h4>Important Note</h4>
+                    <p>This screening tool is not a diagnostic instrument. Always consult qualified healthcare professionals or educational psychologists for formal assessment and diagnosis of learning disabilities.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const featureNames = {{ results.feature_contributions.keys()|list|tojson }};
+        const featureValues = {{ results.feature_contributions.values()|list|tojson }};
+        const shapData = {{ results.shap_values|tojson }};
+        const confidence = {{ results.confidence }};
+        const riskLevel = {{ results.risk_level|tojson }};
+
+        renderFeatureImportanceChart('featureChart', featureNames, featureValues);
+        renderShapChart('shapWaterfall', Object.keys(shapData), Object.values(shapData));
+        renderConfidenceGauge('confidenceGauge', confidence);
+    });
+</script>
+{% endblock %}

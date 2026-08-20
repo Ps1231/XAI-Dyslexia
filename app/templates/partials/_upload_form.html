@@ -1,0 +1,31 @@
+<div class="upload-component">
+    <form id="uploadFormComponent" action="{{ action_url }}" method="POST" enctype="multipart/form-data">
+        <div class="upload-zone" id="uploadZoneComponent">
+            <div class="upload-zone-content">
+                <div class="upload-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <h3>{{ title|default('Drag & Drop Image Here') }}</h3>
+                <p>{{ subtitle|default('or click to browse files') }}</p>
+                <p class="upload-hint">{{ hint|default('Supports PNG, JPG, JPEG, BMP, TIFF') }}</p>
+            </div>
+            <input type="file" name="{{ field_name|default('file') }}" id="fileInputComponent" accept="image/*" hidden>
+        </div>
+
+        <div class="preview-section" id="previewSectionComponent" style="display: none;">
+            <h4>Preview</h4>
+            <div class="preview-container">
+                <img id="previewImageComponent" src="" alt="Preview">
+            </div>
+            <button type="button" class="btn btn-text" id="clearImageComponent">Remove</button>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="submitBtnComponent" disabled>
+            {{ button_text|default('Upload & Analyze') }}
+        </button>
+    </form>
+</div>

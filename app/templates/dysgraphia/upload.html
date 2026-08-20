@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+
+{% block title %}Dysgraphia Screening - Upload Handwriting{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div class="container">
+        <h1>Dysgraphia Screening</h1>
+        <p>Upload a handwriting sample image for AI-powered analysis</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="upload-wrapper">
+            <div class="upload-card">
+                <form id="uploadForm" action="{{ url_for('dysgraphia.analyze') }}" method="POST" enctype="multipart/form-data">
+                    <div class="upload-zone" id="uploadZone">
+                        <div class="upload-zone-content">
+                            <div class="upload-icon">
+                                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                            </div>
+                            <h3>Drag &amp; Drop Handwriting Image</h3>
+                            <p>or click to browse files</p>
+                            <p class="upload-hint">Supports PNG, JPG, JPEG, BMP, TIFF (max 16MB)</p>
+                        </div>
+                        <input type="file" name="handwriting_image" id="fileInput" accept="image/*" hidden>
+                    </div>
+
+                    <div class="preview-section" id="previewSection" style="display: none;">
+                        <h4>Image Preview</h4>
+                        <div class="preview-container">
+                            <img id="previewImage" src="" alt="Handwriting preview">
+                        </div>
+                        <button type="button" class="btn btn-text" id="clearImage">Remove Image</button>
+                    </div>
+
+                    <div class="upload-instructions">
+                        <h4>Guidelines for Best Results</h4>
+                        <ul>
+                            <li>Use a clear, well-lit photograph or scan of handwriting</li>
+                            <li>The image should contain at least one paragraph of text</li>
+                            <li>Ensure the handwriting is the main focus of the image</li>
+                            <li>Avoid images with heavy shadows or glare</li>
+                            <li>White or light-colored paper works best</li>
+                        </ul>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg btn-block" id="analyzeBtn" disabled>
+                        Analyze Handwriting
+                    </button>
+                </form>
+            </div>
+
+            <div class="upload-sidebar">
+                <div class="sidebar-card">
+                    <h4>How It Works</h4>
+                    <ol class="how-it-works">
+                        <li><strong>Upload</strong> &mdash; Provide a handwriting sample image</li>
+                        <li><strong>Process</strong> &mdash; Our AI analyzes visual features</li>
+                        <li><strong>Explain</strong> &mdash; SHAP values explain the prediction</li>
+                        <li><strong>Understand</strong> &mdash; Review feature importance charts</li>
+                    </ol>
+                </div>
+
+                <div class="sidebar-card">
+                    <h4>Features Analyzed</h4>
+                    <ul class="feature-list">
+                        <li>Letter spacing consistency</li>
+                        <li>Line alignment and margins</li>
+                        <li>Stroke consistency and pressure</li>
+                        <li>Letter formation quality</li>
+                        <li>Writing pressure patterns</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
