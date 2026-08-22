@@ -21,10 +21,13 @@
                 Home
             </a>
             <a href="{{ url_for('dysgraphia.upload_form') }}" class="nav-link {% if request.endpoint and 'dysgraphia' in request.endpoint %}active{% endif %}">
-                Dysgraphia Screening
+                Dysgraphia
             </a>
-            <a href="{{ url_for('dyslexia.test_form') }}" class="nav-link {% if request.endpoint and 'dyslexia' in request.endpoint %}active{% endif %}">
-                Dyslexia Screening
+            <a href="{{ url_for('dyslexia.test_form') }}" class="nav-link {% if request.endpoint == 'dyslexia.test_form' %}active{% endif %}">
+                Dyslexia
+            </a>
+            <a href="{{ url_for('dyslexia.aggregate_form') }}" class="nav-link {% if request.endpoint == 'dyslexia.aggregate_form' %}active{% endif %}">
+                Visual Search
             </a>
             <a href="{{ url_for('main.about') }}" class="nav-link {% if request.endpoint == 'main.about' %}active{% endif %}">
                 About

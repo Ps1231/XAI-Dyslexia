@@ -14,6 +14,26 @@
     <div class="container">
         <div class="results-layout">
             <div class="results-main">
+
+                {% if results.method == 'ml_model' %}
+                <div class="method-badge method-badge-ml">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    <span><strong>Real ML Model</strong> — {{ results.method_note }}</span>
+                </div>
+                {% else %}
+                <div class="method-badge method-badge-heuristic">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <span><strong>Heuristic Screening</strong> — {{ results.method_note }}</span>
+                </div>
+                {% endif %}
+
                 <div class="result-banner result-banner-{{ results.risk_level|lower }}">
                     <div class="result-icon">
                         {% if results.risk_level == 'High' %}
@@ -46,7 +66,7 @@
 
                 <div class="result-section">
                     <h3>Feature Contribution Analysis</h3>
-                    <p class="section-description">How each behavioral indicator contributed to the risk assessment. Values above zero push toward higher risk, values below zero push toward lower risk.</p>
+                    <p class="section-description">How each indicator contributed to the risk assessment. Values above zero push toward higher risk, values below zero push toward lower risk.</p>
                     <div class="chart-container">
                         <canvas id="featureChart"></canvas>
                     </div>
@@ -74,7 +94,11 @@
                 </div>
 
                 <div class="result-actions">
-                    <a href="{{ url_for('dyslexia.test_form') }}" class="btn btn-primary">Screen Another Child</a>
+                    {% if results.method == 'ml_model' %}
+                    <a href="{{ url_for('dyslexia.aggregate_form') }}" class="btn btn-primary">Screen Another</a>
+                    {% else %}
+                    <a href="{{ url_for('dyslexia.test_form') }}" class="btn btn-primary">Screen Another</a>
+                    {% endif %}
                     <a href="{{ url_for('main.index') }}" class="btn btn-secondary">Back to Home</a>
                 </div>
             </div>
@@ -125,17 +149,25 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const featureNames = {{ results.feature_contributions.keys()|list|tojson }};
-        const featureValues = {{ results.feature_contributions.values()|list|tojson }};
-        const shapData = {{ results.shap_values|tojson }};
-        const confidence = {{ results.confidence }};
-        const riskLevel = {{ results.risk_level|tojson }};
 
-        renderFeatureImportanceChart('featureChart', featureNames, featureValues);
-        renderShapChart('shapWaterfall', Object.keys(shapData), Object.values(shapData));
-        renderConfidenceGauge('confidenceGauge', confidence);
-    });
+{# VS-CODE-FRIENDLY: data in JSON script block, parsed in JS #}
+<script id="chart-data" type="application/json">
+{
+    "featureNames": {{ results.feature_contributions.keys()|list|tojson|safe }},
+    "featureValues": {{ results.feature_contributions.values()|list|tojson|safe }},
+    "shapData": {{ results.shap_values|tojson|safe }},
+    "confidence": {{ results.confidence|tojson|safe }}
+}
+</script>
+
+<script>
+    (function() {
+        const raw = document.getElementById('chart-data').textContent;
+        const data = JSON.parse(raw);
+
+        renderFeatureImportanceChart('featureChart', data.featureNames, data.featureValues);
+        renderShapChart('shapWaterfall', Object.keys(data.shapData), Object.values(data.shapData));
+        renderConfidenceGauge('confidenceGauge', data.confidence);
+    })();
 </script>
 {% endblock %}

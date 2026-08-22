@@ -16,25 +16,57 @@ def analyze_handwriting(image_path):
     """Run full ML pipeline: preprocess -> extract features -> predict -> explain."""
     try:
         from app.ml.predict import predict_dysgraphia
-        from app.ml.classifiers import load_model
         import joblib
 
         model_dir = current_app.config['MODEL_FOLDER']
-        model_files = [f for f in os.listdir(model_dir) if f.startswith('dysgraphia_') and f.endswith('.pkl')] \
-            if os.path.exists(model_dir) else []
+
+        # FIX: Exclude feature_names / imputer / scaler files
+        model_files = [
+            f for f in os.listdir(model_dir)
+            if f.startswith('dysgraphia_')
+            and f.endswith('.pkl')
+            and 'feature_names' not in f
+            and 'imputer' not in f
+            and 'scaler' not in f
+        ] if os.path.exists(model_dir) else []
 
         if not model_files:
-            return generate_mock_result()
+            return {
+                'error': True,
+                'message': 'No trained dysgraphia model found. Please run train_models.py first.',
+                'prediction': 'Unknown',
+                'confidence': 0.0,
+                'is_positive': False,
+                'features': {},
+                'shap_values': {},
+            }
 
         model_path = os.path.join(model_dir, sorted(model_files)[0])
-        feature_names_path = os.path.join(model_dir, 'dysgraphia_feature_names.pkl')
-        feature_names = joblib.load(feature_names_path) if os.path.exists(feature_names_path) else None
-
         result = predict_dysgraphia(image_path, model_path)
 
         prediction = result.get('prediction', 0)
         confidence = result.get('confidence', 0.0)
         is_dysgraphic = bool(prediction == 1)
+
+        # --- CONFIDENCE THRESHOLD LOGIC ---
+        if confidence < 0.60:
+            prediction_text = 'Uncertain — Manual Review Recommended'
+            is_positive_flag = False
+            confidence_note = 'Low confidence. Model is unsure about this sample.'
+        elif confidence < 0.85:
+            prediction_text = 'Possible Dysgraphic Indicators' if is_dysgraphic else 'Likely Non-Dysgraphic'
+            is_positive_flag = is_dysgraphic
+            confidence_note = 'Moderate confidence. Consider professional evaluation.'
+        else:
+            prediction_text = 'Dysgraphic' if is_dysgraphic else 'Non-Dysgraphic'
+            is_positive_flag = is_dysgraphic
+            confidence_note = 'High confidence prediction.'
+
+        disclaimer = (
+            'This model was trained on a limited dataset and may not '
+            'generalize to all handwriting styles, ages, or writing instruments. '
+            'Results are for demonstration purposes only.'
+        )
 
         feature_importance = result.get('feature_importance', {})
         shap_values = result.get('shap_values', {})
@@ -45,49 +77,48 @@ def analyze_handwriting(image_path):
         for fname, fval in zip(fi_features[:6], fi_values[:6]):
             features[fname] = round(fval, 4)
 
-        if not features:
-            features = {
-                'HOG Features': 0.22,
-                'Contour Analysis': 0.18,
-                'Letter Spacing': 0.15,
-                'Baseline Deviation': 0.13,
-                'Stroke Width': 0.10,
-                'Ink Density': 0.08,
-            }
-
         shap_dict = {}
         sv_features = shap_values.get('features', []) if isinstance(shap_values, dict) else []
         sv_vals = shap_values.get('values', []) if isinstance(shap_values, dict) else []
         for sname, sval in zip(sv_features[:6], sv_vals[:6]):
             shap_dict[sname] = round(sval, 4)
 
-        if not shap_dict:
-            shap_dict = {k: round(np.random.uniform(-0.3, 0.3), 3) for k in features}
-
         return {
-            'prediction': 'Dysgraphic' if is_dysgraphic else 'Non-Dysgraphic',
+            'prediction': prediction_text,
             'confidence': round(confidence * 100, 1),
-            'is_positive': is_dysgraphic,
-            'features': features,
-            'shap_values': shap_dict,
+            'is_positive': is_positive_flag,
+            'confidence_note': confidence_note,
+            'disclaimer': disclaimer,
+            'features': features if features else {
+                'HOG Features': 0.22, 'Contour Analysis': 0.18,
+                'Letter Spacing': 0.15, 'Baseline Deviation': 0.13,
+                'Stroke Width': 0.10, 'Ink Density': 0.08,
+            },
+            'shap_values': shap_dict if shap_dict else {k: 0.0 for k in features},
         }
 
-    except Exception:
-        return generate_mock_result()
+    except Exception as e:
+        return {
+            'error': True,
+            'message': f'Model inference failed: {str(e)}',
+            'prediction': 'Error',
+            'confidence': 0.0,
+            'is_positive': False,
+            'features': {},
+            'shap_values': {},
+        }
 
 
 def generate_mock_result():
+    """Emergency fallback — only used if explicitly called, not auto."""
     return {
         'prediction': 'Dysgraphic',
         'confidence': 78.4,
         'is_positive': True,
         'features': {
-            'HOG Features': 0.28,
-            'Contour Analysis': 0.22,
-            'Letter Spacing': 0.18,
-            'Baseline Deviation': 0.15,
-            'Stroke Width': 0.10,
-            'Ink Density': 0.07,
+            'HOG Features': 0.28, 'Contour Analysis': 0.22,
+            'Letter Spacing': 0.18, 'Baseline Deviation': 0.15,
+            'Stroke Width': 0.10, 'Ink Density': 0.07,
         },
         'shap_values': {f: round(np.random.uniform(-0.3, 0.3), 3) for f in
                         ['HOG Features', 'Contour Analysis', 'Letter Spacing',
@@ -138,6 +169,10 @@ def results():
     data = current_app.config.get('LAST_DYSGRAPHIA_RESULT')
     if not data:
         flash('No analysis results found. Please upload an image first.', 'error')
+        return redirect(url_for('dysgraphia.upload_form'))
+
+    if data.get('results', {}).get('error'):
+        flash(data['results']['message'], 'error')
         return redirect(url_for('dysgraphia.upload_form'))
 
     return render_template(

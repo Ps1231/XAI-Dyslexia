@@ -3,9 +3,13 @@
 Combines HOG descriptors, contour geometry, projection profiles,
 morphological statistics, and letter-spacing metrics into a single
 feature vector suitable for classical ML classifiers.
+
+NOTE: Input images are expected to already be standardized to a fixed
+size (e.g. 128x128) by the preprocessing pipeline. No additional
+resizing is performed here.
 """
 
-from typing import List, Tuple
+from typing import Any, List, Tuple, Optional
 
 import cv2
 import numpy as np
@@ -21,7 +25,7 @@ def extract_hog_features(
     """Compute HOG descriptor for an image.
 
     Args:
-        image: Grayscale or binary image.
+        image: Grayscale or binary image (already size-normalized).
         cell_size: Size of each cell in pixels.
         block_size: Number of cells per block.
         nbins: Number of orientation bins.
@@ -32,10 +36,18 @@ def extract_hog_features(
     if image is None or image.size == 0:
         return np.zeros(1, dtype=np.float32)
 
-    win_size = image.shape[:2][::-1]
-    hog = cv2.HOGDescriptor(
-        win_size, block_size, cell_size, cell_size, nbins
-    )
+    h, w = image.shape[:2]
+    block_size_px = (block_size[0] * cell_size[0], block_size[1] * cell_size[1])
+
+    win_w = max((w // cell_size[0]) * cell_size[0], block_size_px[0])
+    win_h = max((h // cell_size[1]) * cell_size[1], block_size_px[1])
+    win_size = (win_w, win_h)
+
+    if win_w != w or win_h != h:
+        image = cv2.resize(image, (win_w, win_h))
+
+    block_stride = cell_size
+    hog = cv2.HOGDescriptor(win_size, block_size_px, block_stride, cell_size, nbins)
     descriptor = hog.compute(image)
     if descriptor is None:
         return np.zeros(1, dtype=np.float32)
@@ -43,17 +55,7 @@ def extract_hog_features(
 
 
 def extract_contour_features(image: np.ndarray) -> np.ndarray:
-    """Extract geometric features from contours.
-
-    Features: mean aspect ratio, area variance, total convex-hull
-    defect count, and mean perimeter-to-area ratio across contours.
-
-    Args:
-        image: Binary image.
-
-    Returns:
-        numpy array of shape ``(4,)``.
-    """
+    """Extract geometric features from contours."""
     defaults = np.zeros(4, dtype=np.float64)
     if image is None or image.size == 0:
         return defaults
@@ -64,10 +66,10 @@ def extract_contour_features(image: np.ndarray) -> np.ndarray:
     if not contours:
         return defaults
 
-    aspect_ratios: List[float] = []
-    areas: List[float] = []
+    aspect_ratios = []
+    areas = []
     defect_count = 0
-    par_list: List[float] = []
+    par_list = []
 
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
@@ -79,9 +81,12 @@ def extract_contour_features(image: np.ndarray) -> np.ndarray:
 
         hull = cv2.convexHull(cnt, returnPoints=False)
         if len(cnt) > 3 and len(hull) > 3:
-            defects = cv2.convexityDefects(cnt, hull)
-            if defects is not None:
-                defect_count += defects.shape[0]
+            try:
+                defects = cv2.convexityDefects(cnt, hull)
+                if defects is not None:
+                    defect_count += defects.shape[0]
+            except cv2.error:
+                pass
 
         perimeter = cv2.arcLength(cnt, True)
         par = perimeter / max(area, 1e-6)
@@ -99,17 +104,7 @@ def extract_contour_features(image: np.ndarray) -> np.ndarray:
 
 
 def extract_projection_features(image: np.ndarray) -> np.ndarray:
-    """Compute horizontal and vertical projection profiles.
-
-    Returns statistics: horizontal mean/std/max, vertical mean/std/max
-    of the per-row / per-column ink pixel sums.
-
-    Args:
-        image: Binary image.
-
-    Returns:
-        numpy array of shape ``(6,)``.
-    """
+    """Compute horizontal and vertical projection profiles."""
     defaults = np.zeros(6, dtype=np.float64)
     if image is None or image.size == 0:
         return defaults
@@ -132,29 +127,18 @@ def extract_projection_features(image: np.ndarray) -> np.ndarray:
 
 
 def extract_morphological_features(image: np.ndarray) -> np.ndarray:
-    """Extract ink density, Hu moments, and stroke-width variance.
-
-    Args:
-        image: Binary image.
-
-    Returns:
-        numpy array of shape ``(9,)``  (1 + 7 + 1).
-    """
+    """Extract ink density, Hu moments, and stroke-width variance."""
     defaults = np.zeros(9, dtype=np.float64)
     if image is None or image.size == 0:
         return defaults
 
     binary = (image > 0).astype(np.float64)
-
-    # Ink density
     ink_density = binary.mean()
 
-    # Hu moments (log-transformed for stability)
     moments = cv2.moments(binary)
     hu = cv2.HuMoments(moments).flatten()
     hu_log = -np.sign(hu) * np.log10(np.abs(hu) + 1e-30)
 
-    # Stroke-width variance via distance transform
     dist = ndimage.distance_transform_edt(binary > 0)
     sw_var = float(dist.std()) if dist.any() else 0.0
 
@@ -162,24 +146,12 @@ def extract_morphological_features(image: np.ndarray) -> np.ndarray:
 
 
 def extract_letter_spacing_features(image: np.ndarray) -> np.ndarray:
-    """Estimate inter-letter spacing and baseline deviation.
-
-    Uses connected components to measure horizontal gaps and vertical
-    baseline jitter.
-
-    Args:
-        image: Binary image.
-
-    Returns:
-        numpy array of shape ``(4,)``: mean spacing, std spacing,
-        baseline std, baseline range.
-    """
+    """Estimate inter-letter spacing and baseline deviation."""
     defaults = np.zeros(4, dtype=np.float64)
     if image is None or image.size == 0:
         return defaults
 
     binary = (image > 0).astype(np.uint8)
-
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
         binary, connectivity=8
     )
@@ -187,7 +159,6 @@ def extract_letter_spacing_features(image: np.ndarray) -> np.ndarray:
     if num_labels <= 1:
         return defaults
 
-    # Filter out the background label (0)
     x_coords = stats[1:, cv2.CC_STAT_LEFT]
     widths = stats[1:, cv2.CC_STAT_WIDTH]
     centroids_y = centroids[1:, 1]
@@ -196,7 +167,6 @@ def extract_letter_spacing_features(image: np.ndarray) -> np.ndarray:
     x_sorted = x_coords[sorted_idx]
     w_sorted = widths[sorted_idx]
 
-    # Inter-letter gaps: distance between end of component i and start of i+1
     if len(x_sorted) > 1:
         gaps = (x_sorted[1:] - (x_sorted[:-1] + w_sorted[:-1])).astype(np.float64)
         gaps = gaps[gaps >= 0]
@@ -206,12 +176,38 @@ def extract_letter_spacing_features(image: np.ndarray) -> np.ndarray:
         mean_gap = 0.0
         std_gap = 0.0
 
-    # Baseline deviation
     y_sorted = centroids_y[sorted_idx]
     baseline_std = float(y_sorted.std()) if len(y_sorted) > 1 else 0.0
     baseline_range = float(y_sorted.max() - y_sorted.min()) if len(y_sorted) > 1 else 0.0
 
     return np.array([mean_gap, std_gap, baseline_std, baseline_range], dtype=np.float64)
+
+
+def extract_pca_features(
+    X_train: np.ndarray,
+    X_test: Optional[np.ndarray] = None,
+    n_components: Optional[float] = 0.95,
+) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[Any]]:
+    """Apply PCA dimensionality reduction.
+
+    Args:
+        X_train: Training feature matrix.
+        X_test: Optional test feature matrix.
+        n_components: Number of components (int) or variance ratio (float, default 0.95).
+
+    Returns:
+        (X_train_pca, X_test_pca, pca_model). X_test_pca is None if X_test not provided.
+    """
+    from sklearn.decomposition import PCA
+
+    pca = PCA(n_components=n_components, random_state=42)
+    X_train_pca = pca.fit_transform(X_train)
+    X_test_pca = pca.transform(X_test) if X_test is not None else None
+
+    print(f"PCA: reduced {X_train.shape[1]} -> {X_train_pca.shape[1]} dimensions "
+          f"(explained variance: {sum(pca.explained_variance_ratio_):.3f})")
+
+    return X_train_pca, X_test_pca, pca
 
 
 def extract_all_features(
@@ -220,12 +216,12 @@ def extract_all_features(
     """Combine every feature extractor into a single vector.
 
     Args:
-        image: Preprocessed binary image.
+        image: Preprocessed binary image (already size-normalized, e.g. 128x128).
 
     Returns:
-        ``(feature_vector, feature_names)`` where *feature_vector* is a
-        1-D numpy array and *feature_names* is a list of matching labels.
+        ``(feature_vector, feature_names)``
     """
+    # NO resize here — preprocessing pipeline already standardizes size.
     hog = extract_hog_features(image)
     contour = extract_contour_features(image)
     projection = extract_projection_features(image)

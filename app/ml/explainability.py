@@ -163,10 +163,31 @@ def generate_shap_plot_data(
 
     sv = np.asarray(shap_values)
 
+    # --- SHAPE GUARDS ---
+    # Handle various SHAP output shapes safely
+    if sv.ndim == 0:
+        return {"features": [], "values": []}
+
     if sv.ndim == 3:
-        vals = sv[instance_idx, :, 1]
+        # Shape: (n_classes, n_samples, n_features) or (n_samples, n_features, n_classes)
+        if sv.shape[0] <= 2 and sv.shape[2] > sv.shape[0]:
+            # Likely (n_classes, n_samples, n_features)
+            if instance_idx < sv.shape[1]:
+                vals = sv[1, instance_idx, :] if sv.shape[0] > 1 else sv[0, instance_idx, :]
+            else:
+                vals = sv[1, 0, :] if sv.shape[0] > 1 else sv[0, 0, :]
+        else:
+            # Likely (n_samples, n_features, n_classes)
+            if instance_idx < sv.shape[0]:
+                vals = sv[instance_idx, :, 1] if sv.shape[2] > 1 else sv[instance_idx, :, 0]
+            else:
+                vals = sv[0, :, 1] if sv.shape[2] > 1 else sv[0, :, 0]
     elif sv.ndim == 2:
-        vals = sv[instance_idx, :]
+        # Shape: (n_samples, n_features)
+        if instance_idx < sv.shape[0]:
+            vals = sv[instance_idx, :]
+        else:
+            vals = sv[0, :]
     else:
         vals = sv.flatten()
 

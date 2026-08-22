@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+
+{% block title %}Dyslexia Screening - Visual Search Assessment{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div class="container">
+        <h1>Dyslexia Screening (Visual Search)</h1>
+        <p>Enter aggregate results from the computerized visual search task for ML-based prediction</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container">
+        <div class="form-layout">
+            <form id="dyslexiaAggregateForm" action="{{ url_for('dyslexia.screen_aggregate') }}" method="POST" class="screening-form">
+
+                <div class="form-card">
+                    <div class="form-card-header">
+                        <h3>Child Information</h3>
+                        <p>Basic demographic details</p>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="child_name">Child's Name</label>
+                            <input type="text" id="child_name" name="child_name" placeholder="Enter child's name" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="age">Age <span class="required">*</span></label>
+                            <input type="number" id="age" name="age" min="4" max="18" placeholder="e.g. 8" class="form-control" required>
+                            <span class="form-hint">Age in years (4-18)</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="gender">Gender <span class="required">*</span></label>
+                            <select id="gender" name="gender" class="form-control" required>
+                                <option value="">Select gender</option>
+                                <option value="1">Male</option>
+                                <option value="0">Female / Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="grade">Grade Level</label>
+                            <select id="grade" name="grade" class="form-control">
+                                <option value="">Select grade</option>
+                                <option value="K">Kindergarten</option>
+                                <option value="1">1st Grade</option>
+                                <option value="2">2nd Grade</option>
+                                <option value="3">3rd Grade</option>
+                                <option value="4">4th Grade</option>
+                                <option value="5">5th Grade</option>
+                                <option value="6">6th Grade</option>
+                                <option value="7">7th Grade</option>
+                                <option value="8">8th Grade</option>
+                                <option value="9">9th Grade</option>
+                                <option value="10">10th Grade</option>
+                                <option value="11">11th Grade</option>
+                                <option value="12">12th Grade</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-card">
+                    <div class="form-card-header">
+                        <h3>Visual Search Task Results (32 Trials)</h3>
+                        <p>Aggregate metrics from the Dytective / Rello computerized assessment</p>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="total_clicks">Total Clicks <span class="required">*</span></label>
+                            <input type="number" id="total_clicks" name="total_clicks" min="0" placeholder="e.g. 450" class="form-control" required>
+                            <span class="form-hint">Sum of all clicks across 32 trials</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="total_hits">Total Hits <span class="required">*</span></label>
+                            <input type="number" id="total_hits" name="total_hits" min="0" placeholder="e.g. 380" class="form-control" required>
+                            <span class="form-hint">Sum of correct target selections</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="total_misses">Total Misses <span class="required">*</span></label>
+                            <input type="number" id="total_misses" name="total_misses" min="0" placeholder="e.g. 70" class="form-control" required>
+                            <span class="form-hint">Sum of incorrect selections</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="total_score">Total Score <span class="required">*</span></label>
+                            <input type="number" id="total_score" name="total_score" placeholder="e.g. 1520" class="form-control" required>
+                            <span class="form-hint">Cumulative score from all trials</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="mean_accuracy">Mean Accuracy (%) <span class="required">*</span></label>
+                            <input type="number" id="mean_accuracy" name="mean_accuracy" min="0" max="100" step="0.1" placeholder="e.g. 84.5" class="form-control" required>
+                            <span class="form-hint">Average accuracy across 32 trials</span>
+                            <div class="benchmark-bar">
+                                <div class="benchmark-range benchmark-low">Below 60%</div>
+                                <div class="benchmark-range benchmark-mid">60-80%</div>
+                                <div class="benchmark-range benchmark-high">80%+</div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="mean_missrate">Mean Miss Rate (%) <span class="required">*</span></label>
+                            <input type="number" id="mean_missrate" name="mean_missrate" min="0" max="100" step="0.1" placeholder="e.g. 15.5" class="form-control" required>
+                            <span class="form-hint">Average miss rate across 32 trials</span>
+                            <div class="benchmark-bar">
+                                <div class="benchmark-range benchmark-low">Below 10%</div>
+                                <div class="benchmark-range benchmark-mid">10-25%</div>
+                                <div class="benchmark-range benchmark-high">25%+</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-card form-card-info">
+                    <div class="info-box">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="16" x2="12" y2="12"/>
+                            <line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                        <div>
+                            <h4>Real ML Model</h4>
+                            <p>This form uses a <strong>trained Random Forest model</strong> on the Rello et al. visual search dataset. It analyzes attention patterns, click accuracy, and error rates from a standardized 32-trial computerized task. The model was trained on real data with 8 aggregated features.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary btn-lg" id="screenBtn">
+                        Run ML Screening
+                    </button>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-secondary btn-lg">Cancel</a>
+                </div>
+            </form>
+
+            <div class="form-sidebar">
+                <div class="sidebar-card">
+                    <h4>What Happens Next</h4>
+                    <ol class="how-it-works">
+                        <li><strong>Load</strong> &mdash; Real trained ML model loads from disk</li>
+                        <li><strong>Scale</strong> &mdash; Input is normalized using training scaler</li>
+                        <li><strong>Predict</strong> &mdash; Random Forest classifies risk level</li>
+                        <li><strong>Explain</strong> &mdash; Feature importance shows key drivers</li>
+                    </ol>
+                </div>
+
+                <div class="sidebar-card">
+                    <h4>Model Info</h4>
+                    <p style="font-size: 0.9rem; color: #64748b;">
+                        <strong>Algorithm:</strong> Random Forest<br>
+                        <strong>Features:</strong> 8 aggregates<br>
+                        <strong>Training Data:</strong> Rello Visual Search<br>
+                        <strong>Classes:</strong> Low / Medium / High Risk
+                    </p>
+                </div>
+
+                <div class="sidebar-card">
+                    <h4>Alternative</h4>
+                    <p style="font-size: 0.9rem; color: #64748b;">
+                        Don't have visual search data? Use the 
+                        <a href="{{ url_for('dyslexia.test_form') }}">reading metrics form</a> 
+                        instead for a rule-based screening.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
