@@ -61,6 +61,7 @@ REPORTS = []
 
 def _plot_confusion_matrix(cm, class_names, title, save_path):
     """Save a confusion matrix heatmap."""
+    cm = np.array(cm)  # handle list input from JSON serialization
     fig, ax = plt.subplots(figsize=(max(5, len(class_names)), max(4, len(class_names))))
     im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
     ax.figure.colorbar(im, ax=ax)
