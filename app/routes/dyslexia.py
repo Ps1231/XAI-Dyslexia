@@ -7,31 +7,44 @@ import joblib
 
 bp = Blueprint('dyslexia', __name__)
 
-FEATURE_NAMES = [
-    'Words Read Per Minute',
-    'Reading Errors',
-    'Letter Reversals',
-    'Comprehension Score',
-    'Spelling Errors',
+FORM_FEATURE_NAMES = [
+    'wpm', 'errors', 'reversals', 'comprehension', 'spelling_errors',
+]
+
+AGGREGATE_FEATURE_NAMES = [
+    'age', 'gender', 'total_clicks', 'total_hits',
+    'total_misses', 'total_score', 'mean_accuracy', 'mean_missrate'
 ]
 
 
 def _log(msg):
-    """Guaranteed terminal output."""
     sys.stderr.write(f"[DYSLEXIA] {msg}\n")
     sys.stderr.flush()
 
 
 def screen_dyslexia(data):
-    """Reading-metrics form → tries 5-feature model → heuristic fallback."""
+    """Reading-metrics form -> tries 5-feature model -> heuristic fallback."""
     try:
         model_dir = current_app.config['MODEL_FOLDER']
 
-        # --- ATTEMPT 1: Form-compatible model (5 features) ---
         form_model_files = [
             f for f in glob.glob(os.path.join(model_dir, 'dyslexia_form_*.pkl'))
-            if 'feature_names' not in f
+            if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
         ]
+
+        if not form_model_files:
+            tabular_files = [
+                f for f in glob.glob(os.path.join(model_dir, 'dyslexia_tabular_*.pkl'))
+                if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
+            ]
+            for tf in tabular_files:
+                try:
+                    m = joblib.load(tf)
+                    if hasattr(m, 'n_features_in_') and m.n_features_in_ == 5:
+                        form_model_files.append(tf)
+                        break
+                except Exception:
+                    continue
 
         if form_model_files:
             model = joblib.load(sorted(form_model_files)[0])
@@ -54,12 +67,13 @@ def screen_dyslexia(data):
                 _log(f"REAL ML (5-feature form model) -> Risk: {risk}, Conf: {confidence}%")
                 return _build_result(data, risk, confidence, raw_features[0], method='ml_model')
 
-        # --- FALLBACK: Transparent Heuristic ---
         _log("HEURISTIC FALLBACK (no compatible 5-feature model)")
         return _heuristic_screen(data)
 
     except Exception as e:
         _log(f"ERROR: {str(e)}")
+        import traceback
+        current_app.logger.error(traceback.format_exc())
         return {
             'error': True,
             'message': f'Screening failed: {str(e)}',
@@ -70,20 +84,20 @@ def screen_dyslexia(data):
 
 
 def screen_dyslexia_aggregate(data):
-    """Visual-search aggregate form → tries 8-feature aggregate model."""
+    """Visual-search aggregate form -> 8-feature aggregate model."""
     try:
         model_dir = current_app.config['MODEL_FOLDER']
 
         agg_model_files = [
             f for f in glob.glob(os.path.join(model_dir, 'dyslexia_aggregate_*.pkl'))
-            if 'feature_names' not in f
+            if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
         ]
 
         if not agg_model_files:
-            _log("ERROR: No aggregate model found. Run: python scripts/train_models.py --task dyslexia_aggregate")
+            _log("ERROR: No aggregate model found.")
             return {
                 'error': True,
-                'message': 'No aggregate model found. Please train first.',
+                'message': 'No aggregate model found. Run: python scripts/train_models.py --task dyslexia_aggregate',
                 'risk_level': 'Unknown',
                 'confidence': 0.0,
                 'is_positive': False,
@@ -102,7 +116,6 @@ def screen_dyslexia_aggregate(data):
             float(data.get('mean_missrate', 0)),
         ]])
 
-        # Load preprocessing artifacts
         imputer_path = os.path.join(model_dir, 'dyslexia_aggregate_imputer.pkl')
         scaler_path = os.path.join(model_dir, 'dyslexia_aggregate_scaler.pkl')
 
@@ -124,14 +137,18 @@ def screen_dyslexia_aggregate(data):
         risk = 'Low' if prediction == 0 else 'Medium' if prediction == 1 else 'High'
         _log(f"REAL ML (8-feature aggregate model) -> Risk: {risk}, Conf: {confidence}%")
 
-        # Feature importance from model
         feature_names = ['Age', 'Gender', 'Total Clicks', 'Total Hits', 'Total Misses',
                         'Total Score', 'Mean Accuracy', 'Mean Miss Rate']
-        importances = model.feature_importances_
-        contributions = {name: round(imp * 100, 2) for name, imp in zip(feature_names, importances)}
+
+        contributions = {}
+        if hasattr(model, 'feature_importances_'):
+            importances = model.feature_importances_
+            contributions = {name: round(imp * 100, 2) for name, imp in zip(feature_names, importances)}
+        else:
+            contributions = {name: 0.0 for name in feature_names}
 
         shap_vals = {name: round(imp * np.random.uniform(0.8, 1.2), 3)
-                     for name, imp in zip(feature_names, importances)}
+                     for name, imp in contributions.items()}
 
         indicators = []
         acc = float(data.get('mean_accuracy', 70))
@@ -181,6 +198,8 @@ def screen_dyslexia_aggregate(data):
 
     except Exception as e:
         _log(f"ERROR in aggregate screening: {str(e)}")
+        import traceback
+        current_app.logger.error(traceback.format_exc())
         return {
             'error': True,
             'message': f'Aggregate screening failed: {str(e)}',
@@ -191,7 +210,6 @@ def screen_dyslexia_aggregate(data):
 
 
 def _heuristic_screen(data):
-    """Rule-based screening using educational psychology benchmarks."""
     wpm = float(data.get('wpm', 60))
     errors = float(data.get('errors', 5))
     reversals = float(data.get('reversals', 3))
@@ -223,7 +241,6 @@ def _heuristic_screen(data):
 
 
 def _build_result(data, risk_level, confidence, feature_values, method='heuristic'):
-    """Build result dict for template."""
     wpm, errors, reversals, comprehension, spelling = feature_values[:5]
 
     contributions = {
@@ -295,8 +312,6 @@ def _build_result(data, risk_level, confidence, feature_values, method='heuristi
         'method_note': 'ML Model' if method == 'ml_model' else 'Rule-Based Heuristic (Educational Psychology Benchmarks)',
     }
 
-
-# ========== ROUTES ==========
 
 @bp.route('/')
 def test_form():

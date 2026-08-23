@@ -20,20 +20,18 @@ def analyze_handwriting(image_path):
 
         model_dir = current_app.config['MODEL_FOLDER']
 
-        # FIX: Exclude feature_names / imputer / scaler files
+        # FIXED: Strict glob — only actual estimator files
         model_files = [
             f for f in os.listdir(model_dir)
             if f.startswith('dysgraphia_')
             and f.endswith('.pkl')
-            and 'feature_names' not in f
-            and 'imputer' not in f
-            and 'scaler' not in f
+            and not any(x in f for x in ['feature_names', 'imputer', 'scaler', 'pca'])
         ] if os.path.exists(model_dir) else []
 
         if not model_files:
             return {
                 'error': True,
-                'message': 'No trained dysgraphia model found. Please run train_models.py first.',
+                'message': 'No trained dysgraphia model found. Please run: python scripts/train_models.py --task dysgraphia',
                 'prediction': 'Unknown',
                 'confidence': 0.0,
                 'is_positive': False,
@@ -48,7 +46,7 @@ def analyze_handwriting(image_path):
         confidence = result.get('confidence', 0.0)
         is_dysgraphic = bool(prediction == 1)
 
-        # --- CONFIDENCE THRESHOLD LOGIC ---
+        # Confidence threshold logic
         if confidence < 0.60:
             prediction_text = 'Uncertain — Manual Review Recommended'
             is_positive_flag = False
@@ -98,6 +96,8 @@ def analyze_handwriting(image_path):
         }
 
     except Exception as e:
+        import traceback
+        current_app.logger.error(traceback.format_exc())
         return {
             'error': True,
             'message': f'Model inference failed: {str(e)}',
@@ -109,21 +109,8 @@ def analyze_handwriting(image_path):
         }
 
 
-def generate_mock_result():
-    """Emergency fallback — only used if explicitly called, not auto."""
-    return {
-        'prediction': 'Dysgraphic',
-        'confidence': 78.4,
-        'is_positive': True,
-        'features': {
-            'HOG Features': 0.28, 'Contour Analysis': 0.22,
-            'Letter Spacing': 0.18, 'Baseline Deviation': 0.15,
-            'Stroke Width': 0.10, 'Ink Density': 0.07,
-        },
-        'shap_values': {f: round(np.random.uniform(-0.3, 0.3), 3) for f in
-                        ['HOG Features', 'Contour Analysis', 'Letter Spacing',
-                         'Baseline Deviation', 'Stroke Width', 'Ink Density']},
-    }
+# MOCK RESULT IS NOW EXPLICITLY NOT AUTO-CALLED
+# It only exists for emergency manual use if needed
 
 
 @bp.route('/')
