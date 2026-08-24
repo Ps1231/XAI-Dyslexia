@@ -6,7 +6,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
     # Models live in app/models/
-    MODEL_FOLDER = os.path.join(BASE_DIR, 'app', 'models')
+    MODEL_FOLDER = os.path.join(BASE_DIR, 'models')
     
     # Uploads must live inside static so url_for('static') can serve them
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'app', 'static', 'uploads')

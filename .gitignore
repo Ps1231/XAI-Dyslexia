@@ -11,3 +11,8 @@ data/processed/
 dist/
 build/
 .eggs/
+dyslexia_datasets/
+evaluation_plots/
+.state/
+app/static/uploads/
+*.log

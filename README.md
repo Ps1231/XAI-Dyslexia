@@ -8,21 +8,144 @@
 
 ## Table of Contents
 
-1. [Project Objectives](#project-objectives)
-2. [System Architecture](#system-architecture)
-3. [ML Pipeline](#ml-pipeline)
-4. [Datasets Used](#datasets-used)
-5. [Setup & Installation](#setup--installation)
-6. [Data Preparation](#data-preparation)
-7. [Model Training](#model-training)
-8. [Model Evaluation](#model-evaluation)
-9. [Running the Application](#running-the-application)
-10. [Running Tests](#running-tests)
-11. [API Routes](#api-routes)
-12. [Explainability Layer](#explainability-layer)
-13. [Project Structure](#project-structure)
-14. [Technologies](#technologies)
-15. [Disclaimer](#disclaimer)
+1. [Quickstart](#quickstart)
+2. [One-Command Pipeline](#one-command-pipeline)
+3. [Idempotency & Auto-Optimization](#idempotency--auto-optimization)
+4. [Staged Usage](#staged-usage)
+5. [Project Objectives](#project-objectives)
+6. [System Architecture](#system-architecture)
+7. [ML Pipeline](#ml-pipeline)
+8. [Datasets Used](#datasets-used)
+9. [Model Evaluation](#model-evaluation)
+10. [Running the Application](#running-the-application)
+11. [Running Tests](#running-tests)
+12. [API Routes](#api-routes)
+13. [Explainability Layer](#explainability-layer)
+14. [Project Structure](#project-structure)
+15. [Technologies](#technologies)
+16. [Disclaimer](#disclaimer)
+
+---
+
+## Quickstart
+
+```bash
+# 1. Create & activate a virtual environment
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Linux/Mac
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Run EVERYTHING: download data -> train models -> evaluate
+python -m scripts.pipeline
+
+# 4. Launch the web app
+python run.py                # http://127.0.0.1:5000
+```
+
+That's it. The pipeline is fully self-contained and re-runnable — safe to interrupt and resume at any time.
+
+### Prerequisites
+
+- Python 3.10+
+- **Kaggle API token** (datasets 1–3): place `kaggle.json` at `~/.kaggle/kaggle.json` ([create one here](https://www.kaggle.com/settings) → API → Create New Token)
+- **7-Zip or unrar** (dataset 3 ships as a password-protected RAR):
+  - Windows: `winget install 7zip.7zip` (auto-detected from Program Files)
+  - Linux: `sudo apt install p7zip-full`
+
+---
+
+## One-Command Pipeline
+
+```bash
+python -m scripts.pipeline
+```
+
+Runs all three stages in order:
+
+| Stage | What it does | Output |
+|-------|--------------|--------|
+| **1. Prepare** | Downloads 5 public datasets, extracts nested/password archives, organizes into class folders | `data/processed/` |
+| **2. Train** | Extracts ~1,787 features per image, trains 7 classifiers per task, saves artifacts | `app/models/*.pkl` |
+| **3. Evaluate** | Computes accuracy/sensitivity/specificity/ROC-AUC, renders confusion matrices + ROC curves | `evaluation_plots/` |
+
+Options:
+
+```bash
+python -m scripts.pipeline --task dysgraphia    # single task end-to-end
+python -m scripts.pipeline --no-evaluate        # stop after training
+python -m scripts.pipeline --force              # ignore markers, redo everything
+```
+
+Programmatic API:
+
+```python
+from scripts.pipeline import run_pipeline
+
+run_pipeline()                    # everything, skipping finished work
+run_pipeline(task="dysgraphia")
+run_pipeline(evaluate=False)
+run_pipeline(force=True)
+```
+
+---
+
+## Idempotency & Auto-Optimization
+
+The pipeline never repeats finished work:
+
+| Mechanism | How |
+|-----------|-----|
+| **Dataset fingerprints** | Every dataset/model dir gets a SHA-256 over file paths+sizes (`.state/*.json` markers). Unchanged inputs → stage skipped instantly. |
+| **Training skip** | If a task's data is unchanged AND its `.pkl` artifacts exist, training is skipped (`force=True` overrides). |
+| **Evaluation skip** | Per-task fingerprint covers both the data and the exact model files; master report merges history so skips don't erase past results. |
+| **Download skip** | Each source checks its folder before downloading; partial extractions resume where they stopped. |
+
+Image budgets are **self-optimizing**:
+
+```
+dyslexia_handwriting: 47,584 images detected
+  -> auto-cap: 125 images/class? no — budget math:
+  -> 3 classes x 47k total > AUTO_TOTAL_BUDGET (6000)
+  -> cap = 2000/class -> ~6,000 images actually used
+```
+
+- `AUTO_TOTAL_BUDGET = 6000` (training), `3000` (evaluation)
+- Caps clamp between `MIN_CAP_PER_CLASS` / `MAX_CAP_PER_CLASS`
+- Small datasets are used in full — capping only kicks in when needed
+- Override with `max_images=N`, or disable entirely with `full=True`
+- Slow SVMs auto-skip on large/high-dimensional datasets (RF, GB, MLP, LR, DT still train)
+
+---
+
+## Staged Usage
+
+Each stage is also runnable standalone:
+
+```bash
+# Stage 1 only
+python -m scripts.data.prepare [--force] [--skip-download] [--inspect]
+
+# Stage 2 only
+python -m scripts.training.train [--task TASK] [--full] [--pca] [--max-images N] [--force]
+
+# Stage 3 only
+python -m scripts.evaluation.evaluate [--task TASK] [--max-images N] [--force]
+```
+
+Every CLI is a thin shim over a programmatic function:
+
+```python
+from scripts.data.prepare import run_prepare
+from scripts.training.train import run_training
+from scripts.evaluation.evaluate import run_evaluation
+
+run_prepare(skip_download=True)          # just organize what's downloaded
+run_training(task="all", pca=True)
+run_evaluation(task="dysgraphia", force=True)
+```
 
 ---
 
@@ -45,10 +168,9 @@
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              FLASK WEB APP                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
-│  │   /         │  │/dysgraphia  │  │  /dyslexia  │  │ /dyslexia/agg   │ │
+│  │     /       │  │/dysgraphia  │  │  /dyslexia  │  │ /dyslexia/agg   │ │
 │  │  Home       │  │  Upload     │  │  Reading    │  │ Visual Search   │ │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘ │
-│         │                │                │                  │          │
 │         └────────────────┴────────────────┴──────────────────┘          │
 │                                    │                                    │
 │                         ┌──────────┴──────────┐                         │
@@ -61,21 +183,15 @@
               │                      │                      │
        ┌──────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
        │ Preprocess  │      │  Feature    │      │  Classifier │
-       │  Pipeline   │      │ Extraction  │      │   (sklearn) │
-       │             │      │             │      │             │
-       │ • Grayscale │      │ • HOG       │      │ • SVM       │
-       │ • Denoise   │      │ • Contours  │      │ • RandomF   │
-       │ • Binarize  │      │ • Projections│     │ • GradBoost │
-       │ • Deskew    │      │ • Morphology│      │ • MLP       │
-       │ • Resize    │      │ • Spacing   │      │ • LogReg    │
+       │  Pipeline   │      │ Extraction  │      │ (sklearn)   │
        └─────────────┘      └─────────────┘      └──────┬──────┘
                                                         │
-                              ┌─────────────────────────┼─────────────────────────┐
-                              │                         │                         │
-                       ┌──────▼──────┐          ┌──────▼──────┐          ┌──────▼──────┐
-                       │    SHAP     │          │    LIME     │          │  Feature    │
-                       │  (global)   │          │  (local)    │          │ Importance  │
-                       └─────────────┘          └─────────────┘          └─────────────┘
+                              ┌─────────────────────────┼────────────────┐
+                              │                         │                │
+                       ┌──────▼──────┐          ┌──────▼──────┐  ┌──────▼──────┐
+                       │    SHAP     │          │    LIME     │  │  Feature    │
+                       │  (global)   │          │  (local)    │  │ Importance  │
+                       └─────────────┘          └─────────────┘  └─────────────┘
 ```
 
 ---
@@ -83,8 +199,8 @@
 ## ML Pipeline
 
 ### Step 1: Data Collection
-- 5 public datasets downloaded automatically via `prepare_dataset.py`
-- Supports Kaggle, Zenodo, and Mendeley sources
+- 5 public datasets downloaded automatically by `scripts/data/prepare.py`
+- Supports Kaggle (CLI), Zenodo (API), and Mendeley (direct download)
 
 ### Step 2: Preprocessing (Image)
 ```
@@ -96,21 +212,20 @@ Raw Image (BGR)
     → Resize & Pad to 128×128
 ```
 
-### Step 3: Feature Engineering
+### Step 3: Feature Engineering (~1,787 features)
 | Extractor | Features | Description |
 |-----------|----------|-------------|
-| **HOG** | ~1,764 | Histogram of Oriented Gradients (cell=8×8, block=2×2, 9 bins) |
-| **Contours** | 4 | Aspect ratio mean, area variance, convex defects, perimeter/area ratio |
-| **Projections** | 6 | Horizontal & vertical profile statistics (mean, std, max) |
-| **Morphology** | 9 | Ink density, 7 Hu moments (log), stroke-width variance |
-| **Letter Spacing** | 4 | Mean/std gap between components, baseline std & range |
-| **Total** | ~1,787 | Concatenated into single feature vector |
+| HOG | ~1,764 | Histogram of Oriented Gradients (cell=8×8, block=2×2, 9 bins) |
+| Contours | 4 | Aspect ratio mean, area variance, convex defects, perimeter/area ratio |
+| Projections | 6 | Horizontal & vertical profile statistics (mean, std, max) |
+| Morphology | 9 | Ink density, 7 Hu moments (log), stroke-width variance |
+| Letter Spacing | 4 | Mean/std gap between components, baseline std & range |
 
 ### Step 4: Classification
-| Model | Type | Best For |
-|-------|------|----------|
-| SVM (Linear) | Linear kernel | Fast baseline |
-| SVM (RBF) | Non-linear kernel | Complex boundaries |
+| Model | Type | Notes |
+|-------|------|-------|
+| SVM (Linear) | Linear, calibrated | Fast baseline |
+| SVM (RBF) | Non-linear, calibrated | Complex boundaries |
 | Random Forest | Ensemble | Robust, interpretable |
 | Gradient Boosting | Ensemble | High accuracy |
 | MLP | Neural network | Non-linear patterns |
@@ -118,9 +233,9 @@ Raw Image (BGR)
 | Decision Tree | Tree | Fully interpretable rules |
 
 ### Step 5: Explainability
-- **SHAP**: Game-theoretic feature attribution showing how each feature pushes the prediction
-- **LIME**: Local linear approximation around the prediction instance
-- **Feature Importance**: Native model importances (trees) or permutation importance (linear models)
+- **SHAP**: game-theoretic feature attribution (TreeExplainer for trees, KernelExplainer otherwise)
+- **LIME**: local linear approximation around each prediction
+- **Feature Importance**: native importances (trees) or permutation importance (linear models)
 
 ---
 
@@ -132,181 +247,83 @@ Raw Image (BGR)
 | 2 | Rello et al. Dyslexia | Kaggle (luzrello) | Tabular | Dyslexia (Yes/No) |
 | 3 | Drizasazanitaisa Handwriting | Kaggle (drizasazanitaisa) | Image | Normal / Reversal / Corrected |
 | 4 | Mendeley Dysgraphia | Mendeley (39hr8dx76p) | Image | Multiple class folders |
-| 5 | ETDD70 Eye-Tracking | Zenodo (13332134) | Tabular + Gaze | Dyslexia labels |
+| 5 | ETDD70 Eye-Tracking | Zenodo (13332134) | Tabular + Gaze CSVs | Dyslexia labels |
 
----
+Organized layout after Stage 1:
 
-## Setup & Installation
-
-### Prerequisites
-- Python 3.10+
-- `unzip`, `unrar` or `7z` (for dataset extraction)
-- Kaggle API credentials (for Kaggle datasets)
-
-### 1. Clone & Create Virtual Environment
-```bash
-git clone <repo-url>
-cd XAI-Dyslexia
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate  # Windows
-```
-
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-**requirements.txt** should include:
-```
-flask>=2.3
-numpy>=1.24
-pandas>=2.0
-scikit-learn>=1.3
-opencv-python>=4.8
-scipy>=1.11
-joblib>=1.3
-matplotlib>=3.7
-chart.js (CDN, no pip)
-# Optional but recommended:
-shap>=0.42
-lime>=0.2
-```
-
-### 3. Configure Kaggle (if downloading datasets)
-```bash
-pip install kaggle
-mkdir -p ~/.kaggle
-cp /path/to/kaggle.json ~/.kaggle/
-chmod 600 ~/.kaggle/kaggle.json
-```
-
----
-
-## Data Preparation
-
-### Download & Organize All Datasets
-```bash
-python scripts/prepare_dataset.py
-```
-
-This will:
-1. Download all 5 datasets to `dyslexia_datasets/`
-2. Extract archives (handles nested zips, password-protected rars, macOS junk)
-3. Organize into `data/processed/` with structure:
 ```
 data/processed/
-├── dysgraphia/
-│   ├── class_a/
-│   └── class_b/
-├── dyslexia_synthetic/
-│   ├── normal/
-│   └── dyslexic/
-├── dyslexia_handwriting/
-│   ├── normal/
-│   └── corrected/
-├── tabular/
-│   └── *.csv
-└── eyetracking/
-    └── *.csv
+├── dysgraphia/<class>/            # dataset 4
+├── dyslexia_synthetic/<class>/    # dataset 1 (YOLO label parsing)
+├── dyslexia_handwriting/<class>/  # dataset 3
+├── tabular/*.csv                  # dataset 2
+├── eyetracking/*.csv              # dataset 5
+└── .state/                        # pipeline fingerprints (auto-generated)
 ```
 
-### Skip Download (use existing)
-```bash
-python scripts/prepare_dataset.py --skip-download
-```
-
----
-
-## Model Training
-
-### Train All Models
-```bash
-python scripts/train_models.py --task all
-```
-
-### Train Specific Task
-```bash
-python scripts/train_models.py --task dysgraphia
-python scripts/train_models.py --task dyslexia_tabular
-python scripts/train_models.py --task dyslexia_handwriting
-python scripts/train_models.py --task dyslexia_aggregate
-```
-
-### Training Options
-| Flag | Description |
-|------|-------------|
-| `--full` | No sampling cap, train ALL models including slow SVMs |
-| `--max-images N` | Cap images per class (default: 2000) |
-| `--pca` | Apply PCA dimensionality reduction |
-| `--data-dir PATH` | Custom data directory |
-| `--output-dir PATH` | Custom model output directory |
-
-### Output
-Trained models saved to `app/models/`:
-```
-app/models/
-├── dysgraphia_random_forest.pkl
-├── dysgraphia_gradient_boosting.pkl
-├── dysgraphia_mlp.pkl
-├── dyslexia_tabular_random_forest.pkl
-├── dyslexia_tabular_scaler.pkl
-├── dyslexia_tabular_imputer.pkl
-├── dyslexia_aggregate_random_forest.pkl
-├── dyslexia_aggregate_scaler.pkl
-└── ...
-```
+> **Note:** ETDD70 stimulus images are NOT used for image classification — the eye-tracking CSVs feed behavioral features instead.
 
 ---
 
 ## Model Evaluation
 
-### Evaluate All Models
 ```bash
-python scripts/evaluate.py --task all
-```
-
-### Evaluate Specific Task
-```bash
-python scripts/evaluate.py --task dyslexia_aggregate
-python scripts/evaluate.py --task dysgraphia
+python -m scripts.evaluation.evaluate            # everything unfinished
+python -m scripts.evaluation.evaluate --task dyslexia_aggregate --force
 ```
 
 ### Metrics Computed
-- **Accuracy**, **Precision**, **Recall**, **F1-Score**
-- **Sensitivity** (True Positive Rate)
-- **Specificity** (True Negative Rate)
-- **ROC-AUC** (with ROC curve plots)
-- **Confusion Matrix** (visual heatmap)
-- **Class Distribution**
+- Accuracy, Precision, Recall, F1-Score
+- Sensitivity / Specificity (binary tasks)
+- ROC-AUC with rendered ROC curves
+- Confusion matrix heatmaps + class distribution charts
+- Full sklearn classification reports
 
 ### Output
 ```
 evaluation_plots/
-├── roc_aggregate_random_forest.png
-├── cm_aggregate_random_forest.png
-├── aggregate_evaluation_report.json
-├── dysgraphia_evaluation_report.json
-└── ...
+├── cm_<task>_<model>.png                  # confusion matrices
+├── roc_<task>_<model>.png                 # ROC curves
+├── <task>_class_distribution.png
+├── master_evaluation_report.json          # merged history across runs
+└── .state/                                # evaluation fingerprints
 ```
 
 ---
 
 ## Running the Application
 
-### Development Server
 ```bash
-python run.py
+python run.py                 # dev server -> http://127.0.0.1:5000
 ```
-App runs at `http://127.0.0.1:5000`
 
-### Production (Gunicorn)
+Production:
+
 ```bash
 pip install gunicorn
 gunicorn -w 4 -b 0.0.0.0:8000 "app:create_app()"
 ```
 
-### Application Routes
+If models haven't been trained yet, upload pages show a clear message pointing to the training command.
+
+---
+
+## Running Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+| Test File | What It Tests |
+|-----------|---------------|
+| `tests/test_preprocessing.py` | Pipeline output shape, deskew, binarize, denoise, empty image handling |
+| `tests/test_feature_extraction.py` | Feature vector consistency, empty image handling, dimensionality |
+| `tests/test_routes.py` | HTTP GET/POST for all routes, form validation, file upload, redirects |
+
+---
+
+## API Routes
+
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/` | GET | Home page |
@@ -314,79 +331,27 @@ gunicorn -w 4 -b 0.0.0.0:8000 "app:create_app()"
 | `/dysgraphia/` | GET | Upload handwriting image |
 | `/dysgraphia/analyze` | POST | Analyze uploaded image |
 | `/dysgraphia/results` | GET | View analysis results |
-| `/dyslexia/` | GET | Reading assessment form |
+| `/dyslexia/` | GET | Reading assessment form (5-feature model, heuristic fallback) |
 | `/dyslexia/screen` | POST | Submit reading metrics |
-| `/dyslexia/aggregate` | GET | Visual search form |
+| `/dyslexia/aggregate` | GET | Visual search form (8-feature aggregate model) |
 | `/dyslexia/screen_aggregate` | POST | Submit aggregate metrics |
 | `/dyslexia/results` | GET | View screening results |
 
----
-
-## Running Tests
-
-### All Tests
-```bash
-python -m pytest tests/ -v
-```
-
-### Individual Test Files
-```bash
-python tests/test_preprocessing.py
-python tests/test_feature_extraction.py
-python tests/test_routes.py
-```
-
-### Test Coverage
-| Test File | What It Tests |
-|-----------|---------------|
-| `test_preprocessing.py` | Pipeline output shape, deskew, binarize, denoise, empty image handling |
-| `test_feature_extraction.py` | Feature vector consistency, empty image handling, dimensionality checks |
-| `test_routes.py` | HTTP GET/POST for all routes, form validation, file upload, redirects |
+Confidence handling: predictions below 60% confidence flag "Uncertain — Manual Review Recommended"; 60–85% shows "Possible indicators"; ≥85% gives a definitive label.
 
 ---
 
 ## Explainability Layer
 
-### Where It Lives
-```
-app/ml/explainability.py
-```
+Lives in `app/ml/explainability.py`:
 
-### How It Flows
-```
-User Input
-    → predict_dysgraphia() / predict_dyslexia()
-        → get_shap_explanation()      → SHAP values array
-        → get_feature_importance()   → {feature: score} dict
-        → get_lime_explanation()     → Local linear weights
-    → generate_shap_plot_data()      → JSON for Chart.js waterfall
-    → generate_feature_importance_plot_data() → JSON for horizontal bar chart
-    → Frontend (results.html)
-        → Chart.js renders SHAP waterfall + Feature importance bars
-```
+| Function | Purpose |
+|----------|---------|
+| `get_shap_explanation()` | SHAP values — TreeExplainer (trees) or KernelExplainer (SVM/MLP/LR); returns None gracefully if shap isn't installed |
+| `get_feature_importance()` | Native `feature_importances_` → absolute `coef_` → permutation importance |
+| `get_lime_explanation()` | LimeTabularExplainer local weights around the instance |
 
-### What Each Method Does
-
-**`get_shap_explanation(model, X, feature_names, model_type)`**
-- Uses `shap.TreeExplainer` for tree-based models (Random Forest, GB, DT)
-- Falls back to `shap.KernelExplainer` for model-agnostic explanations (SVM, MLP, LR)
-- Returns SHAP values array shaped for multi-class handling
-
-**`get_feature_importance(model, feature_names, X, y)`**
-- Priority 1: Native `feature_importances_` (tree models)
-- Priority 2: Absolute `coef_` (linear models)
-- Priority 3: Permutation importance (requires X, y validation data)
-- Returns sorted `{feature_name: importance_score}` dictionary
-
-**`get_lime_explanation(model, X_train, instance, feature_names, class_names)`**
-- Fits `LimeTabularExplainer` on training data distribution
-- Perturbs the single instance and fits a local linear model
-- Returns prediction, local feature weights, and intercept
-
-**Shape Guards in `generate_shap_plot_data()`**
-- Handles 0-D, 2-D, and 3-D SHAP outputs safely
-- Correctly indexes `(n_classes, n_samples, n_features)` vs `(n_samples, n_features, n_classes)`
-- Prevents index-out-of-bounds crashes on edge-case model outputs
+Flow: prediction → explanations → JSON chart data (`generate_shap_plot_data()`, `generate_feature_importance_plot_data()`) → Chart.js waterfall + bar charts in the browser.
 
 ---
 
@@ -396,59 +361,56 @@ User Input
 XAI-Dyslexia/
 │
 ├── app/
-│   ├── __init__.py              # Flask app factory
-│   ├── config.py                # Configuration (MODEL_FOLDER, UPLOAD_FOLDER, etc.)
+│   ├── __init__.py              # Flask app factory + blueprint registration
+│   ├── config.py                # Config (MODEL_FOLDER, UPLOAD_FOLDER, etc.)
 │   ├── ml/
 │   │   ├── classifiers.py       # get_classifiers(), train_and_evaluate_all()
 │   │   ├── explainability.py    # SHAP, LIME, feature importance wrappers
 │   │   ├── feature_extraction.py # HOG, contours, projections, morphology, spacing
 │   │   ├── predict.py           # predict_dysgraphia(), predict_dyslexia()
-│   │   └── preprocessing.py   # load, grayscale, denoise, binarize, deskew, resize
-│   ├── models/                  # Trained .pkl models (generated by train_models.py)
+│   │   └── preprocessing.py     # load, grayscale, denoise, binarize, deskew, resize
+│   ├── models/                  # Trained .pkl models (generated)
 │   ├── routes/
+│   │   ├── main.py              # Home + About
 │   │   ├── dysgraphia.py        # Upload + analyze handwriting
-│   │   ├── dyslexia.py          # Reading form + aggregate form + results
-│   │   └── main.py              # Home + About
+│   │   └── dyslexia.py          # Reading form + aggregate form + results
 │   ├── static/
 │   │   ├── css/style.css
 │   │   ├── js/main.js           # Navbar, drag-drop upload, form validation
 │   │   ├── js/charts.js         # Chart.js renderers (SHAP, importance, gauge)
 │   │   └── uploads/             # User-uploaded images
-│   └── templates/
-│       ├── base.html
-│       ├── index.html
-│       ├── about.html
-│       ├── dysgraphia/
-│       │   ├── upload.html
-│       │   └── results.html
-│       ├── dyslexia/
-│       │   ├── test.html
-│       │   ├── test_aggregate.html
-│       │   └── results.html
-│       └── partials/
-│           ├── _navigation.html
-│           ├── _result_card.html
-│           └── _upload_form.html
+│   └── templates/               # base, index, about, dysgraphia/, dyslexia/, partials/
 │
 ├── data/
-│   └── processed/               # Organized datasets
+│   └── processed/               # Organized datasets (generated by Stage 1)
 │
-├── dyslexia_datasets/           # Raw downloaded datasets
+├── dyslexia_datasets/           # Raw downloads (generated by Stage 1)
 │
 ├── scripts/
-│   ├── prepare_dataset.py       # Download + extract + organize 5 datasets
-│   ├── train_models.py          # Train all classifiers
-│   └── evaluate.py              # Comprehensive evaluation + plots
+│   ├── __init__.py              # Path bootstrap for package execution
+│   ├── common.py                # Fingerprints, state markers, fs helpers, constants
+│   ├── pipeline.py              # Zero-config orchestrator (Stage 1→2→3)
+│   ├── data/
+│   │   ├── prepare.py           # run_prepare(): idempotent Stage 1
+│   │   ├── sources.py           # The 5 dataset definitions + downloaders
+│   │   ├── download.py          # HTTP + Kaggle CLI helpers (rich progress)
+│   │   ├── extract.py           # zip/rar extraction (password-aware, Windows-safe)
+│   │   ├── organize.py          # YOLO parsing + class-folder organization
+│   │   └── inspect_data.py      # Human-readable dataset summaries
+│   ├── training/
+│   │   ├── train.py             # run_training(): idempotent Stage 2
+│   │   ├── trainer.py           # Task trainers, dynamic auto-cap, up-to-date guards
+│   │   └── loaders.py           # Image-folder + tabular CSV loaders (rich progress)
+│   └── evaluation/
+│       ├── evaluate.py          # run_evaluation(): idempotent Stage 3
+│       ├── tasks.py             # Per-task evaluators (image + tabular)
+│       └── plots.py             # Confusion matrix, ROC, distribution charts
 │
-├── tests/
-│   ├── test_preprocessing.py
-│   ├── test_feature_extraction.py
-│   └── test_routes.py
-│
-├── evaluation_plots/            # Generated by evaluate.py
-│
+├── tests/                       # unittest/pytest suites
+├── notebooks/                   # Exploration notebooks
+├── evaluation_plots/            # Generated by Stage 3
 ├── requirements.txt
-├── run.py                       # Entry point
+├── run.py                       # Flask entry point
 └── README.md
 ```
 
@@ -458,12 +420,13 @@ XAI-Dyslexia/
 
 | Layer | Stack |
 |-------|-------|
-| **Backend** | Python 3.10+, Flask |
-| **ML/DL** | Scikit-learn, NumPy, SciPy |
+| **Backend** | Python 3.10+, Flask 3.x |
+| **ML** | Scikit-learn, NumPy, SciPy, XGBoost |
 | **Image Processing** | OpenCV, Pillow |
-| **Explainability** | SHAP, LIME |
-| **Frontend** | HTML5, CSS3, Vanilla JavaScript, Chart.js |
-| **Data** | Pandas, CSV, Kaggle API, Zenodo API |
+| **Explainability** | SHAP, LIME (optional, graceful fallback) |
+| **Frontend** | HTML5, CSS3, Vanilla JS, Chart.js |
+| **Data** | Pandas, Requests, Kaggle API, Zenodo API |
+| **UX** | Rich (progress bars, console output) |
 | **Testing** | unittest, pytest |
 | **Deployment** | Flask dev server / Gunicorn |
 
@@ -480,8 +443,6 @@ XAI-Dyslexia/
 ---
 
 ## Citation
-
-If you use this project in your research, please cite:
 
 ```bibtex
 @software{xai_dyslexia_2026,
