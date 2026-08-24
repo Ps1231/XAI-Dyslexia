@@ -20,6 +20,18 @@ from scripts.common import IMAGE_EXTS, IMG_SUFFIXES, is_junk
 _shutil = shutil
 
 
+def _copy_if_exists(src, dest_dir: str) -> bool:
+    """Copy *src* into *dest_dir* unless an identically named file is already there.
+
+    Returns True when a copy happened, False when the item already existed.
+    """
+    dest = os.path.join(dest_dir, os.path.basename(str(src)))
+    if os.path.exists(dest):
+        return False
+    _shutil.copy2(str(src), dest)
+    return True
+
+
 # -------------------------------------------------------------
 # Dataset 1 — YOLO labels -> binary or 3-class image folders
 # -------------------------------------------------------------
@@ -65,6 +77,7 @@ def organize_yolo_dyslexia(source_dir: Path, output_dir: str,
 
     n_normal = 0
     n_dyslexic = 0
+    n_skipped = 0
 
     for split in ['train', 'val']:
         img_dir = base / 'images' / split
@@ -95,13 +108,15 @@ def organize_yolo_dyslexia(source_dir: Path, output_dir: str,
                                 continue
 
             dest = dyslexic_dir if is_dyslexic else normal_dir
-            _shutil.copy2(str(img_file), os.path.join(dest, img_file.name))
+            if not _copy_if_exists(img_file, dest):
+                n_skipped += 1
             if is_dyslexic:
                 n_dyslexic += 1
             else:
                 n_normal += 1
 
-    print(f"  Binary split: {n_normal} normal, {n_dyslexic} dyslexic")
+    skipped_note = f" ({n_skipped} already existed)" if n_skipped else ""
+    print(f"  Binary split: {n_normal} normal, {n_dyslexic} dyslexic{skipped_note}")
 
     # Fallback: if normal is empty, use 3-class majority vote
     if n_normal == 0 and n_dyslexic > 0:
@@ -149,7 +164,7 @@ def organize_yolo_dyslexia(source_dir: Path, output_dir: str,
 
                 winner = vote.most_common(1)[0][0] if vote else 0
                 dest = class_dirs.get(winner, class_dirs[0])
-                _shutil.copy2(str(img_file), os.path.join(dest, img_file.name))
+                _copy_if_exists(img_file, dest)
 
         for idx, cdir in class_dirs.items():
             n = len([f for f in os.listdir(cdir) if os.path.isfile(os.path.join(cdir, f))])
@@ -203,9 +218,10 @@ def organize_dyslexia_images(source_dir: Path, output_dir: str,
     for class_name, imgs in sorted(class_images.items()):
         class_dir = os.path.join(target_dir, class_name)
         os.makedirs(class_dir, exist_ok=True)
-        for img in imgs:
-            _shutil.copy2(str(img), os.path.join(class_dir, img.name))
-        print(f"  Class '{class_name}': {len(imgs)} images")
+        copied = sum(_copy_if_exists(img, class_dir) for img in imgs)
+        skipped = len(imgs) - copied
+        note = f" ({skipped} already existed)" if skipped else ""
+        print(f"  Class '{class_name}': {len(imgs)} images{note}")
 
     print(f"  Organized images into {target_dir}")
 
@@ -219,6 +235,8 @@ def organize_dysgraphia_images(source_dir: Path, output_dir: str):
     target_dir = os.path.join(output_dir, 'dysgraphia')
     os.makedirs(target_dir, exist_ok=True)
 
+    copied = 0
+    skipped = 0
     for root, dirs, files in os.walk(source_dir):
         for f in files:
             if f.lower().endswith(IMG_SUFFIXES):
@@ -226,10 +244,13 @@ def organize_dysgraphia_images(source_dir: Path, output_dir: str):
                     continue
                 folder_name = os.path.basename(root).lower().replace(' ', '_')
                 class_dir = os.path.join(target_dir, folder_name)
-                os.makedirs(class_dir, exist_ok=True)
-                _shutil.copy2(os.path.join(root, f), os.path.join(class_dir, f))
+                if _copy_if_exists(os.path.join(root, f), class_dir):
+                    copied += 1
+                else:
+                    skipped += 1
 
-    print(f"  Organized images into {target_dir}")
+    note = f" ({skipped} already existed)" if skipped else ""
+    print(f"  Copied {copied} images{note} into {target_dir}")
 
 
 # -------------------------------------------------------------
@@ -242,16 +263,20 @@ def organize_tabular(source_dir: Path, output_dir: str):
     os.makedirs(target_dir, exist_ok=True)
 
     copied = []
+    skipped = 0
     for root, dirs, files in os.walk(source_dir):
         for f in files:
             if f.lower().endswith('.csv') and not f.startswith("._"):
-                _shutil.copy2(os.path.join(root, f), os.path.join(target_dir, f))
-                copied.append(f)
+                if _copy_if_exists(os.path.join(root, f), target_dir):
+                    copied.append(f)
+                else:
+                    skipped += 1
 
-    if not copied:
+    skipped_note = f" ({skipped} already existed)" if skipped else ""
+    if not copied and not skipped:
         print(f"  WARNING: no CSV files found under {source_dir}")
     else:
-        print(f"  Copied {copied} into {target_dir}")
+        print(f"  Copied {copied}{skipped_note} into {target_dir}")
 
 
 def organize_eyetracking(source_dir: Path, output_dir: str):
@@ -259,7 +284,8 @@ def organize_eyetracking(source_dir: Path, output_dir: str):
     target_dir = os.path.join(output_dir, 'eyetracking')
     os.makedirs(target_dir, exist_ok=True)
 
-    n_csv = 0
+    n_copied = 0
+    n_skipped = 0
     for root, dirs, files in os.walk(source_dir):
         if os.path.basename(root).lower() == "__macosx":
             continue
@@ -267,9 +293,12 @@ def organize_eyetracking(source_dir: Path, output_dir: str):
             if f.startswith("._"):
                 continue
             if f.lower().endswith('.csv'):
-                _shutil.copy2(os.path.join(root, f), os.path.join(target_dir, f))
-                n_csv += 1
+                if _copy_if_exists(os.path.join(root, f), target_dir):
+                    n_copied += 1
+                else:
+                    n_skipped += 1
 
-    print(f"  Copied {n_csv} CSV(s) into {target_dir}")
+    skipped_note = f" ({n_skipped} already existed)" if n_skipped else ""
+    print(f"  Copied {n_copied} CSV(s){skipped_note} into {target_dir}")
     print("  NOTE: ETDD70 stimulus images are NOT for image classification.")
     print("        Build a gaze-feature pipeline (fixation duration, saccade length, etc.)")
