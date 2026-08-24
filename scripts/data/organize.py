@@ -23,11 +23,13 @@ _shutil = shutil
 def _copy_if_exists(src, dest_dir: str) -> bool:
     """Copy *src* into *dest_dir* unless an identically named file is already there.
 
-    Returns True when a copy happened, False when the item already existed.
+    Creates *dest_dir* if needed. Returns True when a copy happened,
+    False when the item already existed.
     """
     dest = os.path.join(dest_dir, os.path.basename(str(src)))
     if os.path.exists(dest):
         return False
+    os.makedirs(dest_dir, exist_ok=True)
     _shutil.copy2(str(src), dest)
     return True
 
