@@ -5,6 +5,7 @@ runs preprocessing, feature extraction, model inference, and
 explainability in one call.
 """
 
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +21,14 @@ from app.ml.explainability import (
 )
 from app.ml.feature_extraction import extract_all_features
 from app.ml.preprocessing import load_image, preprocess_pipeline
+
+_MODEL_CACHE: Dict[str, Any] = {}
+
+
+def _get_cached_model(path: str) -> Any:
+    if path not in _MODEL_CACHE:
+        _MODEL_CACHE[path] = load_model(path)
+    return _MODEL_CACHE[path]
 
 
 def predict_dysgraphia(
@@ -56,33 +65,43 @@ def predict_dysgraphia(
         "lime_explanation": None,
     }
 
+    t_total = time.time()
+
     # 1 – Load & preprocess
+    t0 = time.time()
     raw = load_image(image_path)
     if raw is None:
         result["error"] = f"Could not load image: {image_path}"
         return result
-
     processed = preprocess_pipeline(raw)
+    t_preprocess = time.time() - t0
 
     # 2 – Extract features
+    t0 = time.time()
     feature_vector, feature_names = extract_all_features(processed)
     result["features"] = feature_vector.tolist()
     result["feature_names"] = feature_names
+    t_features = time.time() - t0
 
-    # 3 – Predict
-    model = load_model(model_path)
+    # 3 – Predict (derive prediction from proba to avoid double tree traversal)
+    t0 = time.time()
+    model = _get_cached_model(model_path)
     X = feature_vector.reshape(1, -1)
-    prediction = int(model.predict(X)[0])
-    result["prediction"] = prediction
 
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X)[0]
+        prediction = int(proba.argmax())
+        result["prediction"] = prediction
         result["confidence"] = float(proba.max())
         result["probabilities"] = proba.tolist()
     else:
+        prediction = int(model.predict(X)[0])
+        result["prediction"] = prediction
         result["confidence"] = 1.0
+    t_predict = time.time() - t0
 
     # 4 – Explainability
+    t0 = time.time()
     # SHAP
     try:
         model_type = "tree" if hasattr(model, "estimators_") else "kernel"
@@ -92,7 +111,9 @@ def predict_dysgraphia(
         )
     except Exception:  # noqa: BLE001
         result["shap_values"] = None
+    t_shap = time.time() - t0
 
+    t0 = time.time()
     # Feature importance
     try:
         imp = get_feature_importance(
@@ -104,9 +125,11 @@ def predict_dysgraphia(
         result["feature_importance"] = generate_feature_importance_plot_data(imp)
     except Exception:  # noqa: BLE001
         result["feature_importance"] = None
+    t_importance = time.time() - t0
 
     # LIME
     if X_train is not None:
+        t0 = time.time()
         try:
             result["lime_explanation"] = get_lime_explanation(
                 model,
@@ -117,6 +140,14 @@ def predict_dysgraphia(
             )
         except Exception:  # noqa: BLE001
             result["lime_explanation"] = None
+        t_lime = time.time() - t0
+        print(f"[TIMING] predict_dysgraphia: preprocess={t_preprocess:.4f}s features={t_features:.4f}s "
+              f"predict={t_predict:.4f}s shap={t_shap:.4f}s importance={t_importance:.4f}s "
+              f"lime={t_lime:.4f}s total={time.time() - t_total:.4f}s", flush=True)
+    else:
+        print(f"[TIMING] predict_dysgraphia: preprocess={t_preprocess:.4f}s features={t_features:.4f}s "
+              f"predict={t_predict:.4f}s shap={t_shap:.4f}s importance={t_importance:.4f}s "
+              f"total={time.time() - t_total:.4f}s", flush=True)
 
     return result
 
@@ -154,6 +185,8 @@ def predict_dyslexia(
         "lime_explanation": None,
     }
 
+    t_total = time.time()
+
     if feature_names is None:
         feature_names = list(features_dict.keys())
 
@@ -161,19 +194,23 @@ def predict_dyslexia(
     result["features"] = vector.tolist()
     result["feature_names"] = feature_names
 
-    model = load_model(model_path)
+    t0 = time.time()
+    model = _get_cached_model(model_path)
     X = vector.reshape(1, -1)
-
-    prediction = int(model.predict(X)[0])
-    result["prediction"] = prediction
 
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X)[0]
+        prediction = int(proba.argmax())
+        result["prediction"] = prediction
         result["confidence"] = float(proba.max())
         result["probabilities"] = proba.tolist()
     else:
+        prediction = int(model.predict(X)[0])
+        result["prediction"] = prediction
         result["confidence"] = 1.0
+    t_predict = time.time() - t0
 
+    t0 = time.time()
     # Explainability
     try:
         model_type = "tree" if hasattr(model, "estimators_") else "kernel"
@@ -183,7 +220,9 @@ def predict_dyslexia(
         )
     except Exception:  # noqa: BLE001
         result["shap_values"] = None
+    t_shap = time.time() - t0
 
+    t0 = time.time()
     try:
         imp = get_feature_importance(
             model,
@@ -194,8 +233,11 @@ def predict_dyslexia(
         result["feature_importance"] = generate_feature_importance_plot_data(imp)
     except Exception:  # noqa: BLE001
         result["feature_importance"] = None
+    t_importance = time.time() - t0
 
+    t_lime = 0.0
     if X_train is not None:
+        t0 = time.time()
         try:
             result["lime_explanation"] = get_lime_explanation(
                 model,
@@ -206,6 +248,11 @@ def predict_dyslexia(
             )
         except Exception:  # noqa: BLE001
             result["lime_explanation"] = None
+        t_lime = time.time() - t0
+
+    t_total = time.time() - t_total
+    print(f"[TIMING] predict_dyslexia: predict={t_predict:.4f}s shap={t_shap:.4f}s "
+          f"importance={t_importance:.4f}s lime={t_lime:.4f}s total={t_total:.4f}s", flush=True)
 
     return result
 

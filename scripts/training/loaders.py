@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import random
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 from rich.progress import (
@@ -17,15 +18,28 @@ from rich.progress import (
 from scripts.common import console, IMG_SUFFIXES
 
 
+def _process_single_image(args):
+    """Load, preprocess, and extract features from one image. Runs in a worker process."""
+    import cv2
+    from app.ml.feature_extraction import extract_all_features
+    from app.ml.preprocessing import preprocess_pipeline
+
+    img_path = args
+    img = cv2.imread(img_path)
+    if img is None:
+        return None
+    processed = preprocess_pipeline(img)
+    features, names = extract_all_features(processed)
+    if features is None or len(features) == 0:
+        return None
+    return features, names
+
+
 def load_image_dataset(data_dir, max_images_per_class=None):
     """Load images from directory structure: data_dir/class_name/image.jpg.
 
     Returns (X_features, y_labels, feature_names).
     """
-    import cv2
-    from app.ml.feature_extraction import extract_all_features
-    from app.ml.preprocessing import preprocess_pipeline
-
     X_features = []
     y_labels = []
     feature_names = []
@@ -39,6 +53,7 @@ def load_image_dataset(data_dir, max_images_per_class=None):
 
     print(f"Found classes: {classes}")
 
+    all_tasks = []
     for label_idx, class_name in enumerate(classes):
         class_dir = os.path.join(data_dir, class_name)
         images = [f for f in os.listdir(class_dir)
@@ -51,22 +66,50 @@ def load_image_dataset(data_dir, max_images_per_class=None):
         else:
             print(f"  {class_name}: {len(images)} images")
 
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            MofNCompleteColumn(),
-            TimeRemainingColumn(),
-            console=console,
-        ) as progress:
-            task_id = progress.add_task(f"[cyan]extracting [{class_name}]", total=len(images))
-            for img_name in images:
-                img_path = os.path.join(class_dir, img_name)
+        for img_name in images:
+            all_tasks.append((os.path.join(class_dir, img_name), label_idx))
+
+    max_workers = min(4, os.cpu_count() or 1)
+    print(f"  Extracting features with {max_workers} workers ...")
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("[cyan]extracting features", total=len(all_tasks))
+
+        if max_workers > 1 and len(all_tasks) > 50:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_process_single_image, p): l
+                           for p, l in all_tasks}
+
+                for future in as_completed(futures):
+                    label_idx = futures[future]
+                    try:
+                        result = future.result()
+                        if result is not None:
+                            features, names = result
+                            X_features.append(features)
+                            y_labels.append(label_idx)
+                            if not feature_names:
+                                feature_names = names
+                    except Exception:
+                        pass
+                    progress.advance(task_id)
+        else:
+            import cv2
+            from app.ml.feature_extraction import extract_all_features
+            from app.ml.preprocessing import preprocess_pipeline
+
+            for img_path, label_idx in all_tasks:
                 img = cv2.imread(img_path)
                 if img is not None:
                     processed = preprocess_pipeline(img)
                     features, names = extract_all_features(processed)
-
                     if features is not None and len(features) > 0:
                         X_features.append(features)
                         y_labels.append(label_idx)

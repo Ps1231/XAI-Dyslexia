@@ -4,6 +4,7 @@ Wraps scikit-learn estimators behind a unified interface for easy
 experimentation and model selection.
 """
 
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import os
@@ -32,14 +33,7 @@ def _n_jobs() -> int:
 
 
 def get_classifiers() -> Dict[str, Any]:
-    """Return a mapping of classifier names to fresh estimator instances.
-
-    v4 CHANGES:
-    - Added LogisticRegression and DecisionTreeClassifier for inherent interpretability.
-    - n_jobs limited to 4 max to prevent process thrashing.
-    - RF uses 100 trees by default (faster on high-dim data).
-    - MLP uses smaller hidden layers for faster convergence.
-    """
+    """Return a mapping of classifier names to fresh estimator instances."""
     return {
         "svm_linear": CalibratedClassifierCV(
             LinearSVC(random_state=42, max_iter=5000, dual="auto"),
@@ -55,7 +49,9 @@ def get_classifiers() -> Dict[str, Any]:
             n_estimators=100, random_state=42, n_jobs=_n_jobs()
         ),
         "gradient_boosting": GradientBoostingClassifier(
-            n_estimators=100, random_state=42
+            n_estimators=100, random_state=42,
+            subsample=0.8, min_samples_leaf=10, max_depth=3,
+            warm_start=True,
         ),
         "mlp": MLPClassifier(
             hidden_layer_sizes=(64, 32),
@@ -64,12 +60,15 @@ def get_classifiers() -> Dict[str, Any]:
             early_stopping=True,
         ),
         "logistic_regression": LogisticRegression(
-            max_iter=1000, random_state=42, n_jobs=_n_jobs()
+            max_iter=1000, random_state=42
         ),
         "decision_tree": DecisionTreeClassifier(
             random_state=42, max_depth=10, min_samples_leaf=5
         ),
     }
+
+
+_PROGRESS_INTERVAL = 10  # print every N%
 
 
 def train_model(
@@ -85,7 +84,21 @@ def train_model(
             f"Choose from: {list(classifiers.keys())}"
         )
     model = classifiers[classifier_name]
-    model.fit(X_train, y_train)
+
+    # Chunked training for warm_start models — prints progress at 10% intervals
+    if getattr(model, "warm_start", False):
+        total = model.n_estimators
+        chunk = max(1, total // (100 // _PROGRESS_INTERVAL))  # 10 chunks
+        prev_n = 0
+        for next_n in range(chunk, total + 1, chunk):
+            model.set_params(n_estimators=next_n)
+            model.fit(X_train, y_train)
+            pct = int(next_n / total * 100)
+            print(f"      [{pct:3d}%] {classifier_name}: {next_n}/{total} trees", flush=True)
+        model.set_params(n_estimators=total)  # ensure exact final count
+    else:
+        model.fit(X_train, y_train)
+
     return model
 
 
@@ -116,26 +129,26 @@ def train_and_evaluate_all(
     y_test: np.ndarray,
     skip_models: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Train every classifier and collect evaluation metrics.
-
-    Args:
-        skip_models: List of model names to skip.
-    """
+    """Train every classifier and collect evaluation metrics."""
     results: Dict[str, Any] = {}
     skip_models = skip_models or []
     for name in get_classifiers():
         if name in skip_models:
             results[name] = {"model": None, "metrics": {}, "error": "skipped (dataset too large)"}
             continue
-        print(f"    → Training {name} ...", flush=True)
+        t0 = time.time()
+        print(f"    -> Training {name} ...", flush=True)
         try:
             model = train_model(X_train, y_train, classifier_name=name)
-            print(f"    → Evaluating {name} ...", flush=True)
+            t_train = time.time() - t0
+            print(f"    -> Evaluating {name} ...", flush=True)
+            t1 = time.time()
             metrics = evaluate_model(model, X_test, y_test)
+            t_eval = time.time() - t1
             results[name] = {"model": model, "metrics": metrics}
-            print(f"    ✓ {name} done", flush=True)
+            print(f"    OK {name} done  [train={t_train:.2f}s  eval={t_eval:.2f}s]", flush=True)
         except Exception as exc:
-            print(f"    ✗ {name} failed: {exc}", flush=True)
+            print(f"    FAIL {name} failed: {exc}", flush=True)
             results[name] = {"model": None, "metrics": {}, "error": str(exc)}
     return results
 

@@ -21,7 +21,7 @@ console = Console()
 # ------------------------------------------------------------------
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
-IMG_SUFFIXES = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff')   # for str.endswith checks
+IMG_SUFFIXES = tuple(IMAGE_EXTS)
 TABULAR_EXTS = {".csv", ".tsv"}
 
 SKIP_NAMES = {"__macosx", "__pycache__", ".git", "venv", "env"}

@@ -4,6 +4,7 @@ Provides utilities for loading, cleaning, and normalizing handwritten
 images before feature extraction.
 """
 
+import time
 from typing import Optional, Tuple
 
 import cv2
@@ -19,9 +20,11 @@ def load_image(path: str) -> Optional[np.ndarray]:
     Returns:
         BGR numpy array or None if loading fails.
     """
+    t0 = time.time()
     if not path:
         return None
     image = cv2.imread(path)
+    print(f"[TIMING] load_image: {time.time() - t0:.4f}s", flush=True)
     return image
 
 
@@ -114,7 +117,7 @@ def deskew(image: np.ndarray) -> np.ndarray:
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     rotated = cv2.warpAffine(
-        image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
+        image, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
     )
     return rotated
 
@@ -158,9 +161,31 @@ def preprocess_pipeline(image: np.ndarray) -> np.ndarray:
     Returns:
         Preprocessed binary image of size (128, 128).
     """
+    t_total = time.time()
+
+    t0 = time.time()
     gray = to_grayscale(image)
+    t_grayscale = time.time() - t0
+
+    t0 = time.time()
     denoised = denoise(gray, method="gaussian")
+    t_denoise = time.time() - t0
+
+    t0 = time.time()
     binary = binarize(denoised, method="otsu")
+    t_binarize = time.time() - t0
+
+    t0 = time.time()
     deskewed = deskew(binary)
+    t_deskew = time.time() - t0
+
+    t0 = time.time()
     resized = resize_and_pad(deskewed)
+    t_resize = time.time() - t0
+
+    t_total = time.time() - t_total
+    print(f"[TIMING] preprocess_pipeline: {t_total:.4f}s "
+          f"(grayscale={t_grayscale:.4f} denoise={t_denoise:.4f} "
+          f"binarize={t_binarize:.4f} deskew={t_deskew:.4f} resize={t_resize:.4f})",
+          flush=True)
     return resized

@@ -9,16 +9,37 @@ size (e.g. 128x128) by the preprocessing pipeline. No additional
 resizing is performed here.
 """
 
+import time
 from typing import Any, List, Tuple, Optional
 
 import cv2
 import numpy as np
 from scipy import ndimage
 
+_STATIC_FEATURE_NAMES: List[str] = [
+    "contour_aspect_ratio_mean",
+    "contour_area_variance",
+    "contour_convex_defects",
+    "contour_perimeter_area_ratio",
+    "proj_h_mean",
+    "proj_h_std",
+    "proj_h_max",
+    "proj_v_mean",
+    "proj_v_std",
+    "proj_v_max",
+    "morph_ink_density",
+    *[f"morph_hu_moment_{i}" for i in range(1, 8)],
+    "morph_stroke_width_var",
+    "spacing_mean_gap",
+    "spacing_std_gap",
+    "spacing_baseline_std",
+    "spacing_baseline_range",
+]
+
 
 def extract_hog_features(
     image: np.ndarray,
-    cell_size: Tuple[int, int] = (8, 8),
+    cell_size: Tuple[int, int] = (16, 16),
     block_size: Tuple[int, int] = (2, 2),
     nbins: int = 9,
 ) -> np.ndarray:
@@ -60,7 +81,7 @@ def extract_contour_features(image: np.ndarray) -> np.ndarray:
     if image is None or image.size == 0:
         return defaults
 
-    binary = image if image.max() <= 1 else (image // 255).astype(np.uint8)
+    binary = (image > 0).astype(np.uint8)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if not contours:
@@ -79,14 +100,15 @@ def extract_contour_features(image: np.ndarray) -> np.ndarray:
         area = cv2.contourArea(cnt)
         areas.append(area)
 
-        hull = cv2.convexHull(cnt, returnPoints=False)
-        if len(cnt) > 3 and len(hull) > 3:
-            try:
-                defects = cv2.convexityDefects(cnt, hull)
-                if defects is not None:
-                    defect_count += defects.shape[0]
-            except cv2.error:
-                pass
+        if len(cnt) > 3:
+            hull = cv2.convexHull(cnt, returnPoints=False)
+            if len(hull) > 3:
+                try:
+                    defects = cv2.convexityDefects(cnt, hull)
+                    if defects is not None:
+                        defect_count += defects.shape[0]
+                except cv2.error:
+                    pass
 
         perimeter = cv2.arcLength(cnt, True)
         par = perimeter / max(area, 1e-6)
@@ -109,7 +131,7 @@ def extract_projection_features(image: np.ndarray) -> np.ndarray:
     if image is None or image.size == 0:
         return defaults
 
-    binary = (image > 0).astype(np.float64)
+    binary = image > 0
     h_proj = binary.sum(axis=1)
     v_proj = binary.sum(axis=0)
 
@@ -132,14 +154,14 @@ def extract_morphological_features(image: np.ndarray) -> np.ndarray:
     if image is None or image.size == 0:
         return defaults
 
-    binary = (image > 0).astype(np.float64)
-    ink_density = binary.mean()
+    mask = image > 0
+    ink_density = float(mask.mean())
 
-    moments = cv2.moments(binary)
+    moments = cv2.moments(mask.astype(np.uint8))
     hu = cv2.HuMoments(moments).flatten()
     hu_log = -np.sign(hu) * np.log10(np.abs(hu) + 1e-30)
 
-    dist = ndimage.distance_transform_edt(binary > 0)
+    dist = ndimage.distance_transform_edt(mask)
     sw_var = float(dist.std()) if dist.any() else 0.0
 
     return np.concatenate([[ink_density], hu_log, [sw_var]]).astype(np.float64)
@@ -204,9 +226,6 @@ def extract_pca_features(
     X_train_pca = pca.fit_transform(X_train)
     X_test_pca = pca.transform(X_test) if X_test is not None else None
 
-    print(f"PCA: reduced {X_train.shape[1]} -> {X_train_pca.shape[1]} dimensions "
-          f"(explained variance: {sum(pca.explained_variance_ratio_):.3f})")
-
     return X_train_pca, X_test_pca, pca
 
 
@@ -222,32 +241,34 @@ def extract_all_features(
         ``(feature_vector, feature_names)``
     """
     # NO resize here — preprocessing pipeline already standardizes size.
+    t_all = time.time()
+
+    t0 = time.time()
     hog = extract_hog_features(image)
+    t_hog = time.time() - t0
+
+    t0 = time.time()
     contour = extract_contour_features(image)
+    t_contour = time.time() - t0
+
+    t0 = time.time()
     projection = extract_projection_features(image)
+    t_proj = time.time() - t0
+
+    t0 = time.time()
     morph = extract_morphological_features(image)
+    t_morph = time.time() - t0
+
+    t0 = time.time()
     spacing = extract_letter_spacing_features(image)
+    t_spacing = time.time() - t0
 
     feature_vector = np.concatenate([hog, contour, projection, morph, spacing])
+    names: List[str] = [f"hog_{i}" for i in range(len(hog))] + _STATIC_FEATURE_NAMES
 
-    names: List[str] = [f"hog_{i}" for i in range(len(hog))] + [
-        "contour_aspect_ratio_mean",
-        "contour_area_variance",
-        "contour_convex_defects",
-        "contour_perimeter_area_ratio",
-        "proj_h_mean",
-        "proj_h_std",
-        "proj_h_max",
-        "proj_v_mean",
-        "proj_v_std",
-        "proj_v_max",
-        "morph_ink_density",
-        *["morph_hu_moment_" + str(i) for i in range(1, 8)],
-        "morph_stroke_width_var",
-        "spacing_mean_gap",
-        "spacing_std_gap",
-        "spacing_baseline_std",
-        "spacing_baseline_range",
-    ]
+    t_all = time.time() - t_all
+    print(f"[TIMING] extract_all_features: HOG={t_hog:.4f}s contour={t_contour:.4f}s "
+          f"projection={t_proj:.4f}s morph={t_morph:.4f}s spacing={t_spacing:.4f}s "
+          f"total={t_all:.4f}s", flush=True)
 
     return feature_vector, names

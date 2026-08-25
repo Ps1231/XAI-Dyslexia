@@ -6,6 +6,7 @@ JSON-serialisable data dictionaries instead of matplotlib figures.
 
 from __future__ import annotations
 
+import time
 import warnings
 from typing import Any, Dict, List, Optional
 
@@ -26,6 +27,8 @@ try:
     HAS_LIME = True
 except ImportError:
     HAS_LIME = False
+
+_EXPLAINER_CACHE: Dict[int, Any] = {}
 
 
 def get_shap_explanation(
@@ -50,13 +53,19 @@ def get_shap_explanation(
         warnings.warn("shap is not installed; returning None", stacklevel=2)
         return None
 
+    t0 = time.time()
+    model_id = id(model)
+
     if model_type == "tree":
         explainer = shap.TreeExplainer(model)
     else:
-        background = shap.sample(X, min(100, X.shape[0]))
-        explainer = shap.KernelExplainer(model.predict_proba, background)
+        if model_id not in _EXPLAINER_CACHE:
+            background = shap.sample(X, min(100, X.shape[0]))
+            _EXPLAINER_CACHE[model_id] = shap.KernelExplainer(model.predict_proba, background)
+        explainer = _EXPLAINER_CACHE[model_id]
 
     shap_values = explainer.shap_values(X)
+    print(f"[TIMING] get_shap_explanation (model_type={model_type}): {time.time() - t0:.4f}s", flush=True)
     return shap_values
 
 
@@ -80,6 +89,7 @@ def get_feature_importance(
     Returns:
         ``{feature_name: importance_score}`` dict.
     """
+    t0 = time.time()
     importances: np.ndarray
 
     if hasattr(model, "feature_importances_"):
@@ -95,6 +105,7 @@ def get_feature_importance(
         importances = np.zeros(len(feature_names))
 
     names = [str(n) for n in feature_names[: len(importances)]]
+    print(f"[TIMING] get_feature_importance: {time.time() - t0:.4f}s", flush=True)
     return dict(zip(names, importances.tolist()))
 
 
@@ -104,6 +115,7 @@ def get_lime_explanation(
     instance: np.ndarray,
     feature_names: List[str],
     class_names: Optional[List[str]] = None,
+    num_features: int = 20,
 ) -> Optional[Dict[str, Any]]:
     """Generate a LIME explanation for a single prediction.
 
@@ -113,6 +125,7 @@ def get_lime_explanation(
         instance: Single sample ``(1, n_features)``.
         feature_names: Feature labels.
         class_names: Optional class labels.
+        num_features: Max features to explain (default 20 for speed).
 
     Returns:
         Dictionary with ``prediction``, ``local_exp`` (list of
@@ -123,6 +136,7 @@ def get_lime_explanation(
         warnings.warn("lime is not installed; returning None", stacklevel=2)
         return None
 
+    t0 = time.time()
     explainer = LimeTabularExplainer(
         training_data=X_train,
         feature_names=feature_names,
@@ -131,9 +145,10 @@ def get_lime_explanation(
     )
 
     exp = explainer.explain_instance(
-        instance.flatten(), model.predict_proba, num_features=len(feature_names)
+        instance.flatten(), model.predict_proba, num_features=min(num_features, len(feature_names))
     )
 
+    print(f"[TIMING] get_lime_explanation: {time.time() - t0:.4f}s", flush=True)
     return {
         "prediction": int(exp.predict_proba.argmax()) if hasattr(exp, "predict_proba") else None,
         "local_exp": exp.local_exp,
@@ -196,7 +211,7 @@ def generate_shap_plot_data(
 
     return {
         "features": [names[i] for i in order],
-        "values": [float(vals[i]) for i in order],
+        "values": vals[order].tolist(),
     }
 
 

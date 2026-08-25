@@ -1,6 +1,7 @@
 import os
 import glob
 import sys
+import time
 import numpy as np
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
 import joblib
@@ -16,6 +17,70 @@ AGGREGATE_FEATURE_NAMES = [
     'total_misses', 'total_score', 'mean_accuracy', 'mean_missrate'
 ]
 
+_MODEL_CACHE = {}
+_FORM_MODEL_PATH = None
+_AGG_MODEL_PATH = None
+_IMPUTER_EXISTS = {}
+_SCALER_EXISTS = {}
+
+
+def _get_cached_model(path):
+    if path not in _MODEL_CACHE:
+        _MODEL_CACHE[path] = joblib.load(path)
+    return _MODEL_CACHE[path]
+
+
+def _find_form_model():
+    global _FORM_MODEL_PATH
+    if _FORM_MODEL_PATH is not None:
+        return _FORM_MODEL_PATH
+
+    model_dir = current_app.config['MODEL_FOLDER']
+    form_model_files = [
+        f for f in glob.glob(os.path.join(model_dir, 'dyslexia_form_*.pkl'))
+        if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
+    ]
+
+    if not form_model_files:
+        tabular_files = [
+            f for f in glob.glob(os.path.join(model_dir, 'dyslexia_tabular_*.pkl'))
+            if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
+        ]
+        for tf in tabular_files:
+            try:
+                m = _get_cached_model(tf)
+                if hasattr(m, 'n_features_in_') and m.n_features_in_ == 5:
+                    form_model_files.append(tf)
+                    break
+            except Exception:
+                continue
+
+    if form_model_files:
+        _FORM_MODEL_PATH = sorted(form_model_files)[0]
+    return _FORM_MODEL_PATH
+
+
+def _find_agg_model():
+    global _AGG_MODEL_PATH
+    if _AGG_MODEL_PATH is not None:
+        return _AGG_MODEL_PATH
+
+    model_dir = current_app.config['MODEL_FOLDER']
+    agg_model_files = [
+        f for f in glob.glob(os.path.join(model_dir, 'dyslexia_aggregate_*.pkl'))
+        if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
+    ]
+
+    if agg_model_files:
+        _AGG_MODEL_PATH = sorted(agg_model_files)[0]
+    return _AGG_MODEL_PATH
+
+
+def _path_exists_cached(path):
+    if path not in _IMPUTER_EXISTS:
+        _IMPUTER_EXISTS[path] = os.path.exists(path)
+    return _IMPUTER_EXISTS[path]
+
 
 def _log(msg):
     sys.stderr.write(f"[DYSLEXIA] {msg}\n")
@@ -24,30 +89,12 @@ def _log(msg):
 
 def screen_dyslexia(data):
     """Reading-metrics form -> tries 5-feature model -> heuristic fallback."""
+    t0 = time.time()
     try:
-        model_dir = current_app.config['MODEL_FOLDER']
+        model_path = _find_form_model()
 
-        form_model_files = [
-            f for f in glob.glob(os.path.join(model_dir, 'dyslexia_form_*.pkl'))
-            if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
-        ]
-
-        if not form_model_files:
-            tabular_files = [
-                f for f in glob.glob(os.path.join(model_dir, 'dyslexia_tabular_*.pkl'))
-                if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
-            ]
-            for tf in tabular_files:
-                try:
-                    m = joblib.load(tf)
-                    if hasattr(m, 'n_features_in_') and m.n_features_in_ == 5:
-                        form_model_files.append(tf)
-                        break
-                except Exception:
-                    continue
-
-        if form_model_files:
-            model = joblib.load(sorted(form_model_files)[0])
+        if model_path:
+            model = _get_cached_model(model_path)
             raw_features = np.array([[
                 float(data.get('wpm', 0)),
                 float(data.get('errors', 0)),
@@ -65,9 +112,11 @@ def screen_dyslexia(data):
                     confidence = 75.0
                 risk = 'Low' if prediction == 0 else 'Medium' if prediction == 1 else 'High'
                 _log(f"REAL ML (5-feature form model) -> Risk: {risk}, Conf: {confidence}%")
-                return _build_result(data, risk, confidence, raw_features[0], method='ml_model')
+                print(f"[TIMING] screen_dyslexia (ML): {time.time() - t0:.4f}s", flush=True)
+                return _build_result(data, risk, confidence, raw_features[0], model=model, method='ml_model')
 
         _log("HEURISTIC FALLBACK (no compatible 5-feature model)")
+        print(f"[TIMING] screen_dyslexia (heuristic): {time.time() - t0:.4f}s", flush=True)
         return _heuristic_screen(data)
 
     except Exception as e:
@@ -85,25 +134,21 @@ def screen_dyslexia(data):
 
 def screen_dyslexia_aggregate(data):
     """Visual-search aggregate form -> 8-feature aggregate model."""
+    t0 = time.time()
     try:
-        model_dir = current_app.config['MODEL_FOLDER']
+        model_path = _find_agg_model()
 
-        agg_model_files = [
-            f for f in glob.glob(os.path.join(model_dir, 'dyslexia_aggregate_*.pkl'))
-            if 'feature_names' not in f and 'imputer' not in f and 'scaler' not in f
-        ]
-
-        if not agg_model_files:
+        if not model_path:
             _log("ERROR: No aggregate model found.")
             return {
                 'error': True,
-                'message': 'No aggregate model found. Run: python scripts/train_models.py --task dyslexia_aggregate',
+                'message': 'No aggregate model found. Run: python -m scripts.training.train --task dyslexia_aggregate',
                 'risk_level': 'Unknown',
                 'confidence': 0.0,
                 'is_positive': False,
             }
 
-        model = joblib.load(sorted(agg_model_files)[0])
+        model = _get_cached_model(model_path)
 
         agg_features = np.array([[
             float(data.get('age', 0)),
@@ -116,15 +161,16 @@ def screen_dyslexia_aggregate(data):
             float(data.get('mean_missrate', 0)),
         ]])
 
+        model_dir = current_app.config['MODEL_FOLDER']
         imputer_path = os.path.join(model_dir, 'dyslexia_aggregate_imputer.pkl')
         scaler_path = os.path.join(model_dir, 'dyslexia_aggregate_scaler.pkl')
 
         X = agg_features
-        if os.path.exists(imputer_path):
-            imputer = joblib.load(imputer_path)
+        if _path_exists_cached(imputer_path):
+            imputer = _get_cached_model(imputer_path)
             X = imputer.transform(X)
-        if os.path.exists(scaler_path):
-            scaler = joblib.load(scaler_path)
+        if _path_exists_cached(scaler_path):
+            scaler = _get_cached_model(scaler_path)
             X = scaler.transform(X)
 
         prediction = model.predict(X)[0]
@@ -140,15 +186,8 @@ def screen_dyslexia_aggregate(data):
         feature_names = ['Age', 'Gender', 'Total Clicks', 'Total Hits', 'Total Misses',
                         'Total Score', 'Mean Accuracy', 'Mean Miss Rate']
 
-        contributions = {}
-        if hasattr(model, 'feature_importances_'):
-            importances = model.feature_importances_
-            contributions = {name: round(imp * 100, 2) for name, imp in zip(feature_names, importances)}
-        else:
-            contributions = {name: 0.0 for name in feature_names}
-
-        shap_vals = {name: round(imp * np.random.uniform(0.8, 1.2), 3)
-                     for name, imp in contributions.items()}
+        contributions = _compute_model_contributions(model, X[0], feature_names)
+        shap_vals = _compute_model_shap(model, X, feature_names)
 
         indicators = []
         acc = float(data.get('mean_accuracy', 70))
@@ -196,6 +235,9 @@ def screen_dyslexia_aggregate(data):
             'method_note': 'ML Model (Random Forest on Rello Visual Search Aggregates)',
         }
 
+        print(f"[TIMING] screen_dyslexia_aggregate: {time.time() - t0:.4f}s", flush=True)
+        return result
+
     except Exception as e:
         _log(f"ERROR in aggregate screening: {str(e)}")
         import traceback
@@ -207,6 +249,33 @@ def screen_dyslexia_aggregate(data):
             'confidence': 0.0,
             'is_positive': False,
         }
+
+
+def _compute_model_contributions(model, x, feature_names):
+    """Compute real feature contributions from the model itself."""
+    contributions = {}
+    if hasattr(model, 'feature_importances_'):
+        importances = model.feature_importances_
+        contributions = {name: round(float(imp) * 100, 2) for name, imp in zip(feature_names, importances)}
+    elif hasattr(model, 'coef_'):
+        coefs = np.abs(np.asarray(model.coef_)).flatten()
+        contributions = {name: round(float(c) * 100, 2) for name, c in zip(feature_names, coefs)}
+    else:
+        contributions = {name: 0.0 for name in feature_names}
+    return contributions
+
+
+def _compute_model_shap(model, X, feature_names):
+    """Compute SHAP values using the model's own explanation mechanism."""
+    try:
+        from app.ml.explainability import get_shap_explanation, generate_shap_plot_data
+        model_type = "tree" if hasattr(model, "estimators_") else "kernel"
+        shap_vals = get_shap_explanation(model, X, feature_names, model_type=model_type)
+        if shap_vals is not None:
+            return generate_shap_plot_data(shap_vals, feature_names, instance_idx=0)
+    except Exception:
+        pass
+    return {name: 0.0 for name in feature_names}
 
 
 def _heuristic_screen(data):
@@ -237,27 +306,39 @@ def _heuristic_screen(data):
 
     return _build_result(data, risk, confidence,
                          np.array([wpm, errors, reversals, comprehension, spelling_errors]),
-                         method='heuristic')
+                         model=None, method='heuristic')
 
 
-def _build_result(data, risk_level, confidence, feature_values, method='heuristic'):
+def _build_result(data, risk_level, confidence, feature_values, model=None, method='heuristic'):
     wpm, errors, reversals, comprehension, spelling = feature_values[:5]
 
-    contributions = {
-        'Words Read Per Minute': round((wpm - 100) / 20, 2),
-        'Reading Errors': round(errors * 0.4, 2),
-        'Letter Reversals': round(reversals * 0.6, 2),
-        'Comprehension Score': round((60 - comprehension) * 0.08, 2),
-        'Spelling Errors': round(spelling * 0.4, 2),
-    }
+    form_names = ['Words Read Per Minute', 'Reading Errors', 'Letter Reversals',
+                  'Comprehension Score', 'Spelling Errors']
 
-    shap_vals = {
-        'Words Read Per Minute': round((wpm - 100) / 30, 3),
-        'Reading Errors': round((errors - 3) / 5, 3),
-        'Letter Reversals': round((reversals - 2) / 4, 3),
-        'Comprehension Score': round((comprehension - 70) / 20, 3),
-        'Spelling Errors': round((spelling - 3) / 5, 3),
-    }
+    if model is not None and hasattr(model, 'coef_'):
+        coefs = np.abs(np.asarray(model.coef_)).flatten()
+        contributions = {name: round(float(c) * 100, 2) for name, c in zip(form_names, coefs)}
+    elif model is not None and hasattr(model, 'feature_importances_'):
+        importances = model.feature_importances_
+        contributions = {name: round(float(imp) * 100, 2) for name, imp in zip(form_names, importances)}
+    else:
+        contributions = {
+            'Words Read Per Minute': round((wpm - 100) / 20, 2),
+            'Reading Errors': round(errors * 0.4, 2),
+            'Letter Reversals': round(reversals * 0.6, 2),
+            'Comprehension Score': round((60 - comprehension) * 0.08, 2),
+            'Spelling Errors': round(spelling * 0.4, 2),
+        }
+
+    shap_vals = {}
+    if model is not None:
+        try:
+            X = np.array([[wpm, errors, reversals, comprehension, spelling]], dtype=np.float64)
+            shap_vals = _compute_model_shap(model, X, form_names)
+        except Exception:
+            shap_vals = {name: 0.0 for name in form_names}
+    else:
+        shap_vals = {name: 0.0 for name in form_names}
 
     indicators = []
     if wpm < 80:
@@ -320,6 +401,7 @@ def test_form():
 
 @bp.route('/screen', methods=['POST'])
 def screen():
+    t0 = time.time()
     required_fields = ['wpm', 'errors', 'reversals', 'comprehension', 'spelling_errors']
     missing = [f for f in required_fields if not request.form.get(f)]
 
@@ -340,6 +422,7 @@ def screen():
 
     results = screen_dyslexia(data)
     current_app.config['LAST_DYSLEXIA_RESULT'] = results
+    print(f"[TIMING] /screen route: {time.time() - t0:.4f}s total", flush=True)
     return redirect(url_for('dyslexia.results'))
 
 
@@ -350,6 +433,7 @@ def aggregate_form():
 
 @bp.route('/screen_aggregate', methods=['POST'])
 def screen_aggregate():
+    t0 = time.time()
     required_fields = ['age', 'gender', 'total_clicks', 'total_hits', 'total_misses',
                        'total_score', 'mean_accuracy', 'mean_missrate']
     missing = [f for f in required_fields if not request.form.get(f)]
@@ -373,6 +457,7 @@ def screen_aggregate():
 
     results = screen_dyslexia_aggregate(data)
     current_app.config['LAST_DYSLEXIA_RESULT'] = results
+    print(f"[TIMING] /screen_aggregate route: {time.time() - t0:.4f}s total", flush=True)
     return redirect(url_for('dyslexia.results'))
 
 

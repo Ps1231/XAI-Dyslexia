@@ -1,37 +1,53 @@
 import os
+import time
 import uuid
-import numpy as np
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
-from werkzeug.utils import secure_filename
 
 bp = Blueprint('dysgraphia', __name__)
 
+_MODEL_CACHE = {}
+_RESOLVED_MODEL_PATH = None
 
-def allowed_file(filename):
-    return '.' in filename and \
-        filename.rsplit('.', 1)[1].lower() in current_app.config['ALLOWED_EXTENSIONS']
+
+def _get_cached_model(path):
+    if path not in _MODEL_CACHE:
+        import joblib
+        _MODEL_CACHE[path] = joblib.load(path)
+    return _MODEL_CACHE[path]
+
+
+def _find_model_path():
+    global _RESOLVED_MODEL_PATH
+    if _RESOLVED_MODEL_PATH is not None:
+        return _RESOLVED_MODEL_PATH
+
+    model_dir = current_app.config['MODEL_FOLDER']
+    model_files = [
+        f for f in os.listdir(model_dir)
+        if f.startswith('dysgraphia_')
+        and f.endswith('.pkl')
+        and not any(x in f for x in ['feature_names', 'imputer', 'scaler', 'pca'])
+    ] if os.path.exists(model_dir) else []
+
+    if model_files:
+        _RESOLVED_MODEL_PATH = os.path.join(model_dir, sorted(model_files)[0])
+    return _RESOLVED_MODEL_PATH
 
 
 def analyze_handwriting(image_path):
     """Run full ML pipeline: preprocess -> extract features -> predict -> explain."""
+    t_total = time.time()
     try:
         from app.ml.predict import predict_dysgraphia
-        import joblib
 
-        model_dir = current_app.config['MODEL_FOLDER']
+        t0 = time.time()
+        model_path = _find_model_path()
+        t_find_model = time.time() - t0
 
-        # FIXED: Strict glob — only actual estimator files
-        model_files = [
-            f for f in os.listdir(model_dir)
-            if f.startswith('dysgraphia_')
-            and f.endswith('.pkl')
-            and not any(x in f for x in ['feature_names', 'imputer', 'scaler', 'pca'])
-        ] if os.path.exists(model_dir) else []
-
-        if not model_files:
+        if not model_path:
             return {
                 'error': True,
-                'message': 'No trained dysgraphia model found. Please run: python scripts/train_models.py --task dysgraphia',
+                'message': 'No trained dysgraphia model found. Please run: python -m scripts.training.train --task dysgraphia',
                 'prediction': 'Unknown',
                 'confidence': 0.0,
                 'is_positive': False,
@@ -39,8 +55,11 @@ def analyze_handwriting(image_path):
                 'shap_values': {},
             }
 
-        model_path = os.path.join(model_dir, sorted(model_files)[0])
         result = predict_dysgraphia(image_path, model_path)
+
+        t_total = time.time() - t_total
+        print(f"[TIMING] analyze_handwriting: find_model={t_find_model:.4f}s "
+              f"predict_pipeline={t_total - t_find_model:.4f}s total={t_total:.4f}s", flush=True)
 
         prediction = result.get('prediction', 0)
         confidence = result.get('confidence', 0.0)
@@ -120,6 +139,7 @@ def upload_form():
 
 @bp.route('/analyze', methods=['POST'])
 def analyze():
+    t0 = time.time()
     if 'handwriting_image' not in request.files:
         flash('No file selected. Please upload a handwriting image.', 'error')
         return redirect(url_for('dysgraphia.upload_form'))
@@ -129,14 +149,12 @@ def analyze():
         flash('No file selected. Please upload a handwriting image.', 'error')
         return redirect(url_for('dysgraphia.upload_form'))
 
-    if not allowed_file(file.filename):
+    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if ext not in current_app.config['ALLOWED_EXTENSIONS']:
         flash('Invalid file type. Please upload a PNG, JPG, JPEG, BMP, or TIFF image.', 'error')
         return redirect(url_for('dysgraphia.upload_form'))
 
     upload_dir = current_app.config['UPLOAD_FOLDER']
-    os.makedirs(upload_dir, exist_ok=True)
-
-    ext = file.filename.rsplit('.', 1)[1].lower()
     unique_name = f"{uuid.uuid4().hex}.{ext}"
     filepath = os.path.join(upload_dir, unique_name)
     file.save(filepath)
@@ -148,6 +166,7 @@ def analyze():
         'results': results,
     }
 
+    print(f"[TIMING] /analyze route: {time.time() - t0:.4f}s total", flush=True)
     return redirect(url_for('dysgraphia.results'))
 
 

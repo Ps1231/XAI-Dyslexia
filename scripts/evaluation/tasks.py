@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import glob
 import os
+import hashlib
 
 import joblib
 import numpy as np
@@ -20,6 +21,46 @@ from scripts.evaluation.plots import (
     plot_confusion_matrix,
     plot_roc_curve,
 )
+
+FEATURE_CACHE_DIR = PLOTS_DIR.parent / ".feature_cache"
+
+
+def _image_dir_fingerprint(image_dir):
+    """Quick fingerprint of an image directory for cache keying."""
+    h = hashlib.sha256()
+    for cls in sorted(os.listdir(image_dir)):
+        cls_dir = os.path.join(image_dir, cls)
+        if not os.path.isdir(cls_dir):
+            continue
+        imgs = sorted(f for f in os.listdir(cls_dir) if f.lower().endswith(IMG_SUFFIXES))
+        for img_name in imgs:
+            try:
+                size = os.path.getsize(os.path.join(cls_dir, img_name))
+            except OSError:
+                size = -1
+            h.update(f"{cls}/{img_name}|{size}\n".encode("utf-8", "replace"))
+    return h.hexdigest()[:16]
+
+
+def _load_cached_features(image_dir, max_per_class):
+    """Load cached features if available, else return None."""
+    fp = _image_dir_fingerprint(image_dir)
+    cache_path = FEATURE_CACHE_DIR / f"{os.path.basename(image_dir)}_{max_per_class}_{fp}.pkl"
+    if cache_path.exists():
+        try:
+            data = joblib.load(cache_path)
+            return data["X"], data["y"], data["classes"]
+        except Exception:
+            pass
+    return None
+
+
+def _save_cached_features(image_dir, max_per_class, X, y, classes):
+    """Persist extracted features to disk cache."""
+    fp = _image_dir_fingerprint(image_dir)
+    cache_path = FEATURE_CACHE_DIR / f"{os.path.basename(image_dir)}_{max_per_class}_{fp}.pkl"
+    FEATURE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump({"X": X, "y": y, "classes": classes}, cache_path)
 
 
 def resolve_auto_cap(image_dir):
@@ -100,8 +141,12 @@ def _report(task, model_name, y_true, y_pred, y_proba=None, class_names=None):
 # ============================================================
 
 def _load_image_dataset(image_dir, max_per_class=500):
-    """Load images, preprocess, extract features. Returns X, y, class_names."""
+    """Load images, preprocess, extract features. Returns X, y, class_names.
+    
+    Uses disk cache to avoid redundant feature extraction between runs.
+    """
     import cv2
+    from concurrent.futures import ProcessPoolExecutor, as_completed
     from app.ml.feature_extraction import extract_all_features
     from app.ml.preprocessing import preprocess_pipeline
 
@@ -113,7 +158,12 @@ def _load_image_dataset(image_dir, max_per_class=500):
     if not classes:
         return None, None, None
 
-    X, y = [], []
+    cached = _load_cached_features(image_dir, max_per_class)
+    if cached is not None:
+        print(f"  [cache hit] Loaded features from disk cache for {os.path.basename(image_dir)}")
+        return cached
+
+    all_tasks = []
     for label_idx, class_name in enumerate(classes):
         class_dir = os.path.join(image_dir, class_name)
         images = [f for f in os.listdir(class_dir)
@@ -121,17 +171,44 @@ def _load_image_dataset(image_dir, max_per_class=500):
         if max_per_class:
             images = images[:max_per_class]
         for img_name in images:
-            img = cv2.imread(os.path.join(class_dir, img_name))
-            if img is None:
-                continue
-            processed = preprocess_pipeline(img)
-            features, _ = extract_all_features(processed)
-            X.append(features)
-            y.append(label_idx)
+            all_tasks.append((os.path.join(class_dir, img_name), label_idx))
+
+    def _extract_one(img_path):
+        img = cv2.imread(img_path)
+        if img is None:
+            return None
+        processed = preprocess_pipeline(img)
+        features, _ = extract_all_features(processed)
+        return features
+
+    X, y = [], []
+    max_workers = min(4, os.cpu_count() or 1)
+
+    if max_workers > 1 and len(all_tasks) > 50:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_extract_one, p): l for p, l in all_tasks}
+            for future in as_completed(futures):
+                label_idx = futures[future]
+                try:
+                    features = future.result()
+                    if features is not None:
+                        X.append(features)
+                        y.append(label_idx)
+                except Exception:
+                    pass
+    else:
+        for img_path, label_idx in all_tasks:
+            features = _extract_one(img_path)
+            if features is not None:
+                X.append(features)
+                y.append(label_idx)
 
     if len(X) == 0:
         return None, None, None
-    return np.array(X), np.array(y), classes
+
+    X_arr, y_arr = np.array(X), np.array(y)
+    _save_cached_features(image_dir, max_per_class, X_arr, y_arr, classes)
+    return X_arr, y_arr, classes
 
 
 def evaluate_image_task(task_name, data_dir, model_dir, max_per_class=500):
